@@ -40,7 +40,7 @@ export function Sidebar() {
       </div>
 
       <div className="p-3 border-t border-slate-800">
-        <NavLink to="/" className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-colors w-full">
+        <NavLink to="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-colors w-full">
           <LogOut size={16} />
           Déconnexion
         </NavLink>

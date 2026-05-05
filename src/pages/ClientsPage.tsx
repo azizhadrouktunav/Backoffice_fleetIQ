@@ -67,6 +67,7 @@ const mockClients = [
   status: 'Active',
   website: 'www.texpress.fr',
   formula: 'Premium',
+  abonnement: 'FleetIQ Pro',
   timezone: 'UTC+1',
   address: '12 Rue de la Logistique, 75001 Paris, France',
   tel2: '+33 1 98 76 54 32',
@@ -87,6 +88,7 @@ const mockClients = [
   status: 'Active',
   website: 'www.glogistics.com',
   formula: 'Enterprise',
+  abonnement: 'FleetIQ Secure',
   timezone: 'UTC+1',
   address: '45 Avenue des Transports, 69002 Lyon, France',
   tel2: '+33 4 11 22 33 44',
@@ -107,6 +109,7 @@ const mockClients = [
   status: 'Blocked',
   website: 'www.lrapide.fr',
   formula: 'Standard',
+  abonnement: 'FleetIQ Mechanics',
   timezone: 'UTC+1',
   address: '8 Boulevard de la Vitesse, 13001 Marseille, France',
   tel2: '',
@@ -127,6 +130,7 @@ const mockClients = [
   status: 'Active',
   website: 'www.autofleet.pro',
   formula: 'Enterprise',
+  abonnement: 'FleetIQ Vision',
   timezone: 'UTC+2',
   address: "22 Rue de l'Automobile, 31000 Toulouse, France",
   tel2: '+33 9 11 22 33 44',
@@ -318,6 +322,8 @@ const STEPS = [
   label: 'Compte'
 }];
 
+const FLEETIQ_ABONNEMENTS = ['FleetIQ Secure', 'FleetIQ Pro', 'FleetIQ Mechanics', 'FleetIQ Vision'] as const;
+
 function InstallPlateSelect({
   value,
   onChange,
@@ -436,6 +442,7 @@ export function ClientsPage() {
   // Multi-step Add/Edit Modal State
   const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [editAbonnement, setEditAbonnement] = useState<string>(FLEETIQ_ABONNEMENTS[0]);
   const [currentStep, setCurrentStep] = useState(1);
   // View Details Modal State
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -487,6 +494,11 @@ export function ClientsPage() {
   // --- Handlers ---
   const openAddEditModal = (client: any = null) => {
     setSelectedClient(client);
+    const nextAbonnement =
+    client?.abonnement && FLEETIQ_ABONNEMENTS.includes(client.abonnement as (typeof FLEETIQ_ABONNEMENTS)[number]) ?
+    client.abonnement :
+    FLEETIQ_ABONNEMENTS[0];
+    setEditAbonnement(nextAbonnement);
     setCurrentStep(1);
     setVehicleLimitType('authorized');
     setAccountLimitType('authorized');
@@ -970,6 +982,24 @@ export function ClientsPage() {
                           <option value="UTC+2">UTC+2 (Europe de l'Est)</option>
                         </select>
                       </div>
+                      {selectedClient &&
+                    <div className="col-span-1 md:col-span-2">
+                          <label className="block text-xs font-medium text-slate-600 mb-1">
+                            Abonnement FleetIQ
+                          </label>
+                          <select
+                        value={editAbonnement}
+                        onChange={(e) => setEditAbonnement(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow">
+                        
+                            {FLEETIQ_ABONNEMENTS.map((ab) =>
+                        <option key={ab} value={ab}>
+                                {ab}
+                              </option>
+                        )}
+                          </select>
+                        </div>
+                    }
                     </div>
                   </div>
                 }

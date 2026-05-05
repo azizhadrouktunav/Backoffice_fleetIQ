@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
@@ -9,7 +8,7 @@ import { EquipmentsPage } from './pages/EquipmentsPage';
 export function App() {
   return <Router>
       <Routes>
-        <Route path="/" element={<LoginPage />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
