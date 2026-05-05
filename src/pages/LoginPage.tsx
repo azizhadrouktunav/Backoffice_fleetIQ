@@ -54,7 +54,7 @@ export function LoginPage() {
             </div>
           </div>
 
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors text-sm mt-2 shadow-md shadow-blue-600/20">
+          <button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 rounded-lg transition-colors text-sm mt-2 shadow-md shadow-green-600/25">
             Se connecter
           </button>
         </form>
