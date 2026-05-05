@@ -55,6 +55,21 @@ const resellerClients: Record<string, string[]> = {
   'Global Logistics': ['Transport Express', 'Livraison Rapide'],
   'Auto Fleet Pro': ['Transport Express', 'Auto Fleet Pro']
 };
+function assignPartyLabel(reseller: string, client: string) {
+  return reseller === client ?
+  `${client} (revendeur et client)` :
+  `${client} · ${reseller}`;
+}
+const assignPartyLabels: string[] = [];
+const assignPartyByLabel: Record<string, { reseller: string; client: string }> = {};
+for (const [reseller, clients] of Object.entries(resellerClients)) {
+  for (const client of clients) {
+    const label = assignPartyLabel(reseller, client);
+    assignPartyLabels.push(label);
+    assignPartyByLabel[label] = { reseller, client };
+  }
+}
+assignPartyLabels.sort((a, b) => a.localeCompare(b, 'fr'));
 // Client -> vehicles mapping
 const clientVehicles: Record<string, string[]> = {
   Tunav: [],
@@ -273,8 +288,7 @@ export function EquipmentsPage() {
   // Assignment modal state
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [equipmentToAssign, setEquipmentToAssign] = useState<any>(null);
-  const [assignReseller, setAssignReseller] = useState('');
-  const [assignClient, setAssignClient] = useState('');
+  const [assignParty, setAssignParty] = useState('');
   const [assignVehicle, setAssignVehicle] = useState('');
   // Stats filters
   const [statsPeriod, setStatsPeriod] = useState<PeriodKey>('30d');
@@ -310,20 +324,25 @@ export function EquipmentsPage() {
   };
   const openAssignModal = (eq: any) => {
     setEquipmentToAssign(eq);
-    setAssignReseller(eq.reseller !== 'Tunav' ? eq.reseller : '');
-    setAssignClient(eq.client !== 'Tunav' ? eq.client : '');
+    const isDefaultTunav = eq.reseller === 'Tunav' && eq.client === 'Tunav';
+    setAssignParty(isDefaultTunav ? '' : assignPartyLabel(eq.reseller, eq.client));
     setAssignVehicle(eq.car !== 'Unassigned' ? eq.car : '');
     setIsAssignModalOpen(true);
   };
   const handleAssign = () => {
     if (!equipmentToAssign) return;
+    const pair = assignParty ?
+    assignPartyByLabel[assignParty] :
+    { reseller: 'Tunav', client: 'Tunav' };
+    const reseller = pair?.reseller ?? 'Tunav';
+    const client = pair?.client ?? 'Tunav';
     setEquipments((prev) =>
     prev.map((eq) =>
     eq.id === equipmentToAssign.id ?
     {
       ...eq,
-      reseller: assignReseller || 'Tunav',
-      client: assignClient || 'Tunav',
+      reseller,
+      client,
       car: assignVehicle || 'Unassigned'
     } :
     eq
@@ -1218,37 +1237,20 @@ export function EquipmentsPage() {
           <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-3">
             <Link2 className="shrink-0 mt-0.5" size={16} />
             <p>
-              Sélectionnez un revendeur, puis un client pour affecter cet
-              équipement.
+              Choisissez une ligne : <strong>client · revendeur</strong>, ou une
+              entrée <strong>revendeur et client</strong> lorsque c’est la même
+              structure.
             </p>
           </div>
 
-          {/* Step 1: Reseller */}
           <SearchableSelect
-            value={assignReseller}
-            onChange={(val) => {
-              setAssignReseller(val);
-              setAssignClient('');
-            }}
-            options={mockResellers}
-            placeholder="-- Sélectionner un revendeur --"
-            label="1. Revendeur"
-            icon={<Building2 size={14} />} />
-          
-
-          {/* Step 2: Client (shown when reseller selected) */}
-          {assignReseller &&
-          <SearchableSelect
-            value={assignClient}
-            onChange={(val) => {
-              setAssignClient(val);
-            }}
-            options={resellerClients[assignReseller] || []}
-            placeholder="-- Sélectionner un client --"
-            label="2. Client"
-            icon={<User size={14} />} />
-
-          }
+            value={assignParty}
+            onChange={setAssignParty}
+            options={assignPartyLabels}
+            placeholder="-- Revendeur / client --"
+            label="Revendeur / client"
+            icon={<Building2 size={14} />}
+          />
 
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
