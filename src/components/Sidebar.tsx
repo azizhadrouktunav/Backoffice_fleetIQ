@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, CreditCard, Server, LogOut, Car } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Server, LogOut, Car } from 'lucide-react';
 export function Sidebar() {
   const navItems = [{
     to: '/dashboard',
@@ -12,8 +12,8 @@ export function Sidebar() {
     label: 'Gestion Clients'
   }, {
     to: '/subscriptions',
-    icon: CreditCard,
-    label: 'Abonnements'
+    icon: Package,
+    label: 'Packs'
   }, {
     to: '/equipments',
     icon: Server,
