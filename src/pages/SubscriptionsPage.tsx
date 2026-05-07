@@ -1058,18 +1058,23 @@ export function SubscriptionsPage() {
             </span>
           </div>
 
-          {clientForPayment?.packId !== null && packById.get(clientForPayment.packId) && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-slate-500">Pack :</span>
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                  COLOR_STYLES[packById.get(clientForPayment.packId)!.color].badge
-                }`}
-              >
-                {packById.get(clientForPayment.packId)!.name}
-              </span>
-            </div>
-          )}
+          {(() => {
+            const pack =
+              clientForPayment?.packId != null ? packById.get(clientForPayment.packId) : undefined;
+
+            if (!pack) return null;
+
+            return (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-slate-500">Pack :</span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold ${COLOR_STYLES[pack.color].badge}`}
+                >
+                  {pack.name}
+                </span>
+              </div>
+            );
+          })()}
 
           <div className="bg-amber-50 text-amber-900 p-3 rounded-lg text-sm flex items-start gap-3">
             <AlertCircle className="shrink-0 mt-0.5 text-amber-700" size={16} />
