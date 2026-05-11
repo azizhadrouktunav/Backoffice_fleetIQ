@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Search,
@@ -40,6 +40,7 @@ import {
 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
+import { useFleetStore } from '../state/FleetStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -81,7 +82,7 @@ const mockClients = [
   id: 2,
   name: 'Global Logistics',
   type: 'Revendeur',
-  reseller: '-',
+  reseller: 'Tunav',
   email: 'admin@glogistics.com',
   tel: '+33 4 56 78 90 12',
   expiry: '2026-06-30',
@@ -123,7 +124,7 @@ const mockClients = [
   id: 4,
   name: 'Auto Fleet Pro',
   type: 'Revendeur',
-  reseller: '-',
+  reseller: 'Tunav',
   email: 'contact@autofleet.pro',
   tel: '+33 9 87 65 43 21',
   expiry: '2025-01-01',
@@ -436,6 +437,8 @@ function InstallPlateSelect({
 
 }
 export function ClientsPage() {
+  const { currentUserRole, currentUserName } = useFleetStore();
+  const isResellerUser = currentUserRole === 'Revendeur';
   // Main Table State
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -444,6 +447,7 @@ export function ClientsPage() {
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [editAbonnement, setEditAbonnement] = useState<string>(FLEETIQ_ABONNEMENTS[0]);
   const [currentStep, setCurrentStep] = useState(1);
+  const [clientType, setClientType] = useState<'Simple' | 'Revendeur'>('Simple');
   // View Details Modal State
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [clientToView, setClientToView] = useState<any>(null);
@@ -500,6 +504,7 @@ export function ClientsPage() {
     FLEETIQ_ABONNEMENTS[0];
     setEditAbonnement(nextAbonnement);
     setCurrentStep(1);
+    setClientType(isResellerUser ? 'Simple' : client?.type === 'Revendeur' ? 'Revendeur' : 'Simple');
     setVehicleLimitType('authorized');
     setAccountLimitType('authorized');
     setIsAddEditModalOpen(true);
@@ -656,18 +661,37 @@ export function ClientsPage() {
     setIsConfigModalOpen(true);
   };
   // --- Filtering ---
-  const filteredClients = mockClients.filter((client) => {
-    const matchSearch =
-    client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    client.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = typeFilter ?
-    client.type.toLowerCase() === typeFilter :
-    true;
-    return matchSearch && matchType;
-  });
+  const filteredClients = mockClients
+    .filter((client) => client.reseller === currentUserName)
+    .filter((client) => (isResellerUser ? client.type === 'Simple' : true))
+    .filter((client) => {
+      const matchSearch =
+        client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        client.email.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchType = typeFilter ? client.type.toLowerCase() === typeFilter : true;
+      return matchSearch && matchType;
+    });
   // --- Wizard Navigation ---
-  const nextStep = () => setCurrentStep((p) => Math.min(p + 1, 4));
-  const prevStep = () => setCurrentStep((p) => Math.max(p - 1, 1));
+  const visibleSteps = useMemo(
+    () => (clientType === 'Revendeur' ? STEPS.filter((s) => s.id !== 3) : STEPS),
+    [clientType]
+  );
+  const currentStepIdx = Math.max(
+    0,
+    visibleSteps.findIndex((s) => s.id === currentStep)
+  );
+  const nextStep = () =>
+    setCurrentStep(visibleSteps[Math.min(currentStepIdx + 1, visibleSteps.length - 1)]?.id ?? 1);
+  const prevStep = () => setCurrentStep(visibleSteps[Math.max(currentStepIdx - 1, 0)]?.id ?? 1);
+
+  useEffect(() => {
+    // If switching to Revendeur while on Configuration step, move back to Contact
+    if (clientType === 'Revendeur' && currentStep === 3) setCurrentStep(2);
+  }, [clientType, currentStep]);
+
+  useEffect(() => {
+    if (isResellerUser && clientType === 'Revendeur') setClientType('Simple');
+  }, [isResellerUser, clientType]);
   return (
     <div className="space-y-6 pb-8">
       <div className="flex items-center justify-between">
@@ -847,10 +871,10 @@ export function ClientsPage() {
               <div
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-blue-600 -z-10 transition-all duration-300"
                 style={{
-                  width: `${(currentStep - 1) / (STEPS.length - 1) * 100}%`
+                  width: `${visibleSteps.length <= 1 ? 0 : currentStepIdx / (visibleSteps.length - 1) * 100}%`
                 }}>
               </div>
-              {STEPS.map((step) => {
+              {visibleSteps.map((step) => {
                 const isCompleted = currentStep > step.id;
                 const isCurrent = currentStep === step.id;
                 return (
@@ -908,29 +932,28 @@ export function ClientsPage() {
                             <input
                             type="radio"
                             name="type"
-                            defaultChecked={
-                            !selectedClient ||
-                            selectedClient.type === 'Simple'
-                            }
+                            checked={clientType === 'Simple'}
+                            onChange={() => setClientType('Simple')}
                             className="text-blue-600 focus:ring-blue-500 border-slate-300" />
                           
                             <span className="text-sm text-slate-700">
                               Simple
                             </span>
                           </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                            type="radio"
-                            name="type"
-                            defaultChecked={
-                            selectedClient?.type === 'Revendeur'
-                            }
-                            className="text-blue-600 focus:ring-blue-500 border-slate-300" />
-                          
-                            <span className="text-sm text-slate-700">
-                              Revendeur
-                            </span>
-                          </label>
+                          {!isResellerUser && (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                              type="radio"
+                              name="type"
+                              checked={clientType === 'Revendeur'}
+                              onChange={() => setClientType('Revendeur')}
+                              className="text-blue-600 focus:ring-blue-500 border-slate-300" />
+                            
+                              <span className="text-sm text-slate-700">
+                                Revendeur
+                              </span>
+                            </label>
+                          )}
                         </div>
                       </div>
                       <div>
@@ -961,16 +984,6 @@ export function ClientsPage() {
                         type="url"
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
                       
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">
-                          Formule commerciale du contrat
-                        </label>
-                        <select className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow">
-                          <option>Standard</option>
-                          <option>Premium</option>
-                          <option>Enterprise</option>
-                        </select>
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -1201,7 +1214,7 @@ export function ClientsPage() {
                   Précédent
                 </button>
               }
-              {currentStep < STEPS.length ?
+              {currentStepIdx < visibleSteps.length - 1 ?
               <button
                 onClick={nextStep}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1">

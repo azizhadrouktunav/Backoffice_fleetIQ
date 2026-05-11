@@ -1,23 +1,70 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { DashboardPage } from './pages/DashboardPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { EquipmentsPage } from './pages/EquipmentsPage';
-export function App() {
-  return <Router>
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+import { LoginPage, BackofficeRole, LoginContext } from './pages/LoginPage';
+import { useFleetStore } from './state/FleetStore';
 
-        <Route element={<Layout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/subscriptions" element={<SubscriptionsPage />} />
-          <Route path="/equipments" element={<EquipmentsPage />} />
+export function App() {
+  const { setCurrentUserRole, setCurrentUserName } = useFleetStore();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentRole, setCurrentRole] = useState<BackofficeRole | null>(null);
+
+  const handleLogin = (ctx: LoginContext) => {
+    setCurrentRole(ctx.role);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCurrentRole(null);
+    setCurrentUserRole('Tunav');
+    setCurrentUserName('Tunav');
+  };
+
+  if (!isAuthenticated || !currentRole) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  // Build allowed routes based on role
+  const canAccess = (route: 'dashboard' | 'clients' | 'subscriptions' | 'equipments') => {
+    switch (currentRole) {
+      case 'admin_tunav':
+      case 'revendeur':
+        return true;
+      case 'sav_tunav':
+        return route === 'dashboard' || route === 'equipments';
+      case 'finance_tunav':
+        return route === 'dashboard' || route === 'clients' || route === 'subscriptions';
+      default:
+        return false;
+    }
+  };
+
+  const defaultRoute =
+    currentRole === 'sav_tunav'
+      ? '/equipments'
+      : currentRole === 'finance_tunav'
+      ? '/subscriptions'
+      : '/dashboard';
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Navigate to={defaultRoute} replace />} />
+
+        <Route element={<Layout role={currentRole} onLogout={handleLogout} />}>
+          {canAccess('dashboard') && <Route path="/dashboard" element={<DashboardPage />} />}
+          {canAccess('clients') && <Route path="/clients" element={<ClientsPage />} />}
+          {canAccess('subscriptions') && <Route path="/subscriptions" element={<SubscriptionsPage />} />}
+          {canAccess('equipments') && <Route path="/equipments" element={<EquipmentsPage />} />}
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to={defaultRoute} replace />} />
       </Routes>
-    </Router>;
+    </Router>
+  );
 }

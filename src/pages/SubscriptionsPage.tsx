@@ -6,7 +6,6 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle2,
-  Plus,
   Trash2,
   Package,
   XCircle,
@@ -16,10 +15,13 @@ import {
   ListChecks,
   ShieldCheck,
   CreditCard,
-  Ban
+  Ban,
+  SlidersHorizontal,
+  Settings
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
+import { useFleetStore } from '../state/FleetStore';
 
 type FeatureNode = {
   id: string;
@@ -32,8 +34,29 @@ type Pack = {
   name: string;
   description: string;
   color: 'blue' | 'indigo' | 'amber' | 'emerald' | 'slate';
-  features: string[]; // leaf feature ids
+  vehicleLimit: number; // quota véhicules par défaut
+  supportedEquipments: EquipmentType[]; // types d’équipements supportés par le pack (quota défini à l’affectation)
+  features: string[]; // leaf feature ids (fonctionnalités générales)
   isActive: boolean;
+};
+
+type EquipmentType =
+  | 'ETX'
+  | 'MiniTrace'
+  | 'MedWatch'
+  | 'ETBLE'
+  | 'ET8'
+  | 'ET6'
+  | 'EasyCAN'
+  | 'ET8+CAN'
+  | 'ET6+CAN'
+  | 'Dashcam';
+
+type ClientPackAssignment = {
+  packId: number;
+  vehicleLimit: number;
+  equipmentLimits: Partial<Record<EquipmentType, number>>;
+  customFeatures?: string[]; // si défini, ce pack devient “personnalisé” pour ce client
 };
 
 type ClientWithPack = {
@@ -44,7 +67,8 @@ type ClientWithPack = {
   tel: string;
   expiry: string;
   status: 'Active' | 'Blocked';
-  packId: number | null;
+  vehicleLimit: number | null; // null = illimité (pas d’icône quotas)
+  packs: ClientPackAssignment[];
 };
 
 const COLOR_STYLES: Record<Pack['color'], { badge: string; ring: string }> = {
@@ -360,6 +384,8 @@ const initialPacks: Pack[] = [
     name: 'FleetIQ Pro',
     description: 'Pack standard avec suivi et rapports essentiels.',
     color: 'indigo',
+    vehicleLimit: 50,
+    supportedEquipments: ['ETX', 'ET6', 'ET8'],
     features: [
       'suivie:flotte:tri_dynamique',
       'suivie:flotte:visualisation_cartographique',
@@ -373,6 +399,8 @@ const initialPacks: Pack[] = [
     name: 'FleetIQ Secure',
     description: 'Pack orienté sécurité et alertes.',
     color: 'blue',
+    vehicleLimit: 30,
+    supportedEquipments: ['ETX', 'ETBLE', 'Dashcam'],
     features: [
       'alerte:securite_actifs:remorquage',
       'alerte:conducteur_urgences:sos',
@@ -383,9 +411,26 @@ const initialPacks: Pack[] = [
   },
   {
     id: 3,
+    name: 'FleetIQ Mechanic',
+    description: 'Pack orienté maintenance et parc.',
+    color: 'amber',
+    vehicleLimit: 40,
+    supportedEquipments: ['ET6', 'ET8', 'EasyCAN'],
+    features: [
+      'parc:vehicules:read_update',
+      'parc:vehicules:count',
+      'alerte:etat_mecanique:dtc',
+      'alerte:etat_mecanique:pression_pneus'
+    ],
+    isActive: true
+  },
+  {
+    id: 4,
     name: 'FleetIQ Vision',
     description: 'Pack premium avec dashboard exécutif.',
     color: 'emerald',
+    vehicleLimit: 100,
+    supportedEquipments: ['ET8+CAN', 'ET6+CAN', 'EasyCAN'],
     features: ['dashboard:executif:kpis', 'dashboard:executif:tendance', 'dashboard:etat_parc:flux_alertes'],
     isActive: true
   }
@@ -398,7 +443,13 @@ const initialClients: ClientWithPack[] = [
     type: 'Simple',
     email: 'contact@texpress.fr',
     tel: '+33 1 23 45 67 89',
-    packId: 1,
+    packs: [
+      {
+        packId: 1,
+        vehicleLimit: 50,
+        equipmentLimits: { ETX: 50, ET6: 50, ET8: 50 }
+      }
+    ],
     expiry: '2025-12-31',
     status: 'Active'
   },
@@ -408,7 +459,13 @@ const initialClients: ClientWithPack[] = [
     type: 'Revendeur',
     email: 'admin@glogistics.com',
     tel: '+33 4 56 78 90 12',
-    packId: 2,
+    packs: [
+      {
+        packId: 2,
+        vehicleLimit: 30,
+        equipmentLimits: { ETX: 30, ETBLE: 30, Dashcam: 10 }
+      }
+    ],
     expiry: '2026-06-30',
     status: 'Active'
   },
@@ -418,7 +475,13 @@ const initialClients: ClientWithPack[] = [
     type: 'Simple',
     email: 'hello@lrapide.fr',
     tel: '+33 6 12 34 56 78',
-    packId: 1,
+    packs: [
+      {
+        packId: 1,
+        vehicleLimit: 50,
+        equipmentLimits: { ETX: 50, ET6: 50, ET8: 50 }
+      }
+    ],
     expiry: '2024-10-15',
     status: 'Blocked'
   },
@@ -428,20 +491,40 @@ const initialClients: ClientWithPack[] = [
     type: 'Revendeur',
     email: 'contact@autofleet.pro',
     tel: '+33 9 87 65 43 21',
-    packId: null,
+    packs: [],
     expiry: '2025-01-01',
     status: 'Active'
   }
 ];
 
 export function SubscriptionsPage() {
+  const { currentUserRole, currentUserName, packs: basePacks, clients: allClients, setClients } = useFleetStore();
   const allLeafFeatureIds = useMemo(() => flattenLeafIds(FEATURE_CATALOG), []);
+  const equipmentTypes = useMemo(
+    () =>
+      [
+        'ETX',
+        'MiniTrace',
+        'MedWatch',
+        'ETBLE',
+        'ET8',
+        'ET6',
+        'EasyCAN',
+        'ET8+CAN',
+        'ET6+CAN',
+        'Dashcam'
+      ] as EquipmentType[],
+    []
+  );
 
-  const [packs, setPacks] = useState<Pack[]>(initialPacks);
-  const [clients, setClients] = useState<ClientWithPack[]>(initialClients);
+  const [packs, setPacks] = useState<Pack[]>(basePacks as unknown as Pack[]);
 
   const [clientSearch, setClientSearch] = useState('');
   const [packSearch, setPackSearch] = useState('');
+  const fixedPackNames = useMemo(
+    () => ['FleetIQ Secure', 'FleetIQ Pro', 'FleetIQ Mechanic', 'FleetIQ Vision'] as const,
+    []
+  );
 
   // --- Create/Edit pack modal ---
   const [isPackModalOpen, setIsPackModalOpen] = useState(false);
@@ -449,6 +532,8 @@ export function SubscriptionsPage() {
   const [packName, setPackName] = useState('');
   const [packDescription, setPackDescription] = useState('');
   const [packColor, setPackColor] = useState<Pack['color']>('indigo');
+  const [packVehicleLimit, setPackVehicleLimit] = useState<number>(50);
+  const [packEquipments, setPackEquipments] = useState<EquipmentType[]>([]);
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set());
   const [featureSearch, setFeatureSearch] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['module:suivie', 'module:parc']));
@@ -458,39 +543,71 @@ export function SubscriptionsPage() {
   const [clientToAssign, setClientToAssign] = useState<ClientWithPack | null>(null);
   const [selectedPackId, setSelectedPackId] = useState<number | null>(null);
 
+  // --- Quotas modal (per client) ---
+  const [isQuotasModalOpen, setIsQuotasModalOpen] = useState(false);
+  const [clientToEditQuotas, setClientToEditQuotas] = useState<ClientWithPack | null>(null);
+  const [quotaVehicleLimit, setQuotaVehicleLimit] = useState<number>(0);
+  const [quotaEquipmentLimits, setQuotaEquipmentLimits] = useState<Partial<Record<EquipmentType, number>>>({});
+  const [quotaError, setQuotaError] = useState<string | null>(null);
+
+  // --- Customize features modal (per client) ---
+  const [isCustomizeModalOpen, setIsCustomizeModalOpen] = useState(false);
+  const [clientToCustomize, setClientToCustomize] = useState<ClientWithPack | null>(null);
+  const [customSelectedFeatures, setCustomSelectedFeatures] = useState<Set<string>>(new Set());
+
   // --- Payment modal ---
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [clientForPayment, setClientForPayment] = useState<ClientWithPack | null>(null);
   const [newExpiry, setNewExpiry] = useState('');
 
   // Stats
-  const totalClients = clients.length;
-  const activeClients = clients.filter((c) => c.status === 'Active').length;
-  const blockedClients = clients.filter((c) => c.status === 'Blocked').length;
-  const clientsWithPack = clients.filter((c) => c.packId !== null).length;
+  const visibleClients = useMemo(() => {
+    const isTunavUser = currentUserRole === 'Tunav';
+    return (allClients as unknown as ClientWithPack[])
+      .filter((c) => !c.name.endsWith('_Stock'))
+      .filter((c) => c.name !== 'Tunav')
+      // Tunav voit ses revendeurs + clients directs ; un revendeur ne voit que ses propres clients
+      .filter((c) => c.reseller === currentUserName)
+      .filter((c) => (isTunavUser ? true : c.type === 'Simple'));
+  }, [allClients, currentUserName, currentUserRole]);
+
+  const totalClients = visibleClients.length;
+  const activeClients = visibleClients.filter((c) => c.status === 'Active').length;
+  const blockedClients = visibleClients.filter((c) => c.status === 'Blocked').length;
+  const clientsWithPack = visibleClients.filter((c) => c.packs.length > 0).length;
 
   const packsActive = packs.filter((p) => p.isActive).length;
   const totalPacks = packs.length;
+  const clientsWithCustomPack = useMemo(
+    () =>
+      visibleClients.filter((c) =>
+        c.packs.some((a) => Array.isArray(a.customFeatures) && a.customFeatures.length > 0)
+      ).length,
+    [visibleClients]
+  );
 
   const packById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
 
   const filteredPacks = useMemo(() => {
     const q = packSearch.trim().toLowerCase();
-    if (!q) return packs;
-    return packs.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
-  }, [packSearch, packs]);
+    const base = packs.filter((p) => fixedPackNames.includes(p.name as any));
+    if (!q) return base;
+    return base.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+  }, [packSearch, packs, fixedPackNames]);
 
   const filteredClients = useMemo(() => {
     const q = clientSearch.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q));
-  }, [clientSearch, clients]);
+    if (!q) return visibleClients;
+    return visibleClients.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q));
+  }, [clientSearch, visibleClients]);
 
   const openCreatePackModal = () => {
     setPackEditingId(null);
     setPackName('');
     setPackDescription('');
     setPackColor('indigo');
+    setPackVehicleLimit(50);
+    setPackEquipments([]);
     setSelectedFeatures(new Set());
     setFeatureSearch('');
     setExpandedNodes(new Set(['module:suivie', 'module:parc']));
@@ -502,6 +619,8 @@ export function SubscriptionsPage() {
     setPackName(pack.name);
     setPackDescription(pack.description);
     setPackColor(pack.color);
+    setPackVehicleLimit(pack.vehicleLimit);
+    setPackEquipments(pack.supportedEquipments);
     setSelectedFeatures(new Set(pack.features));
     setFeatureSearch('');
     setExpandedNodes(new Set(['module:suivie', 'module:parc', 'module:alerte', 'module:rapport', 'module:dashboard']));
@@ -517,6 +636,8 @@ export function SubscriptionsPage() {
       name,
       description: packDescription.trim(),
       color: packColor,
+      vehicleLimit: Math.max(0, Number.isFinite(packVehicleLimit) ? packVehicleLimit : 0),
+      supportedEquipments: Array.from(new Set(packEquipments)).sort((a, b) => a.localeCompare(b)),
       features,
       isActive: true
     };
@@ -534,13 +655,46 @@ export function SubscriptionsPage() {
 
   const deletePack = (packId: number) => {
     setPacks((prev) => prev.filter((p) => p.id !== packId));
-    setClients((prev) => prev.map((c) => (c.packId === packId ? { ...c, packId: null } : c)));
+    setClients((prev) =>
+      prev.map((c) => ({
+        ...c,
+        packs: c.packs.filter((a) => a.packId !== packId)
+      }))
+    );
   };
 
   const openAssignModal = (client: ClientWithPack) => {
     setClientToAssign(client);
-    setSelectedPackId(client.packId);
+    setSelectedPackId(client.packs[0]?.packId ?? null);
     setIsAssignModalOpen(true);
+  };
+
+  const openQuotasModal = (client: ClientWithPack) => {
+    const assignment = client.packs[0];
+    const pack = assignment ? packById.get(assignment.packId) : undefined;
+    const nextEquipmentLimits =
+      assignment?.equipmentLimits ??
+      (pack?.supportedEquipments ?? []).reduce<Partial<Record<EquipmentType, number>>>((acc, t) => {
+        acc[t] = 0;
+        return acc;
+      }, {});
+
+    setClientToEditQuotas(client);
+    setQuotaVehicleLimit(client.vehicleLimit ?? (assignment?.vehicleLimit ?? pack?.vehicleLimit ?? 0));
+    setQuotaEquipmentLimits(nextEquipmentLimits);
+    setQuotaError(null);
+    setIsQuotasModalOpen(true);
+  };
+
+  const openCustomizeFeaturesModal = (client: ClientWithPack) => {
+    const assignment = client.packs[0];
+    const pack = assignment ? packById.get(assignment.packId) : undefined;
+    const base = assignment?.customFeatures ?? pack?.features ?? [];
+    setClientToCustomize(client);
+    setCustomSelectedFeatures(new Set(base));
+    setFeatureSearch('');
+    setExpandedNodes(new Set(['module:suivie', 'module:parc']));
+    setIsCustomizeModalOpen(true);
   };
 
   const openPaymentModal = (client: ClientWithPack) => {
@@ -551,7 +705,22 @@ export function SubscriptionsPage() {
 
   const handleAssignPack = () => {
     if (!clientToAssign) return;
-    setClients((prev) => prev.map((c) => (c.id === clientToAssign.id ? { ...c, packId: selectedPackId } : c)));
+    const pack = selectedPackId != null ? packById.get(selectedPackId) : undefined;
+    const nextAssignment: ClientPackAssignment[] =
+      pack && selectedPackId != null
+        ? [
+            {
+              packId: selectedPackId,
+              vehicleLimit: pack.vehicleLimit,
+              equipmentLimits: pack.supportedEquipments.reduce<Partial<Record<EquipmentType, number>>>((acc, t) => {
+                acc[t] = 0;
+                return acc;
+              }, {})
+            }
+          ]
+        : [];
+
+    setClients((prev) => prev.map((c) => (c.id === clientToAssign.id ? { ...c, packs: nextAssignment } : c)));
     setIsAssignModalOpen(false);
   };
 
@@ -700,24 +869,17 @@ export function SubscriptionsPage() {
             Créez des packs, affectez des fonctionnalités, puis associez un pack à chaque client.
           </p>
         </div>
-        <button
-          onClick={openCreatePackModal}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Plus size={16} />
-          Nouveau pack
-        </button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total Packs" value={totalPacks.toString()} subtitle="Packs configurés" icon={Package} />
         <StatCard
-          title="Packs Actifs"
-          value={packsActive.toString()}
-          trend={`${totalPacks ? Math.round((packsActive / totalPacks) * 100) : 0}%`}
+          title="Clients avec pack personnalisé"
+          value={clientsWithCustomPack.toString()}
+          trend={`${totalClients ? Math.round((clientsWithCustomPack / totalClients) * 100) : 0}%`}
           trendUp={true}
-          subtitle="Disponibles à l’affectation"
+          subtitle="Fonctionnalités personnalisées"
           icon={ShieldCheck}
         />
         <StatCard
@@ -781,13 +943,6 @@ export function SubscriptionsPage() {
                     >
                       <Edit2 size={16} />
                     </button>
-                    <button
-                      onClick={() => deletePack(pack.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                      title="Supprimer le pack"
-                    >
-                      <Trash2 size={16} />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -827,7 +982,8 @@ export function SubscriptionsPage() {
               </thead>
               <tbody className="text-sm divide-y divide-slate-50">
                 {filteredClients.map((client) => {
-                  const pack = client.packId !== null ? packById.get(client.packId) : undefined;
+                  const assignment = client.packs[0];
+                  const pack = assignment ? packById.get(assignment.packId) : undefined;
                   return (
                     <tr key={client.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-4">
@@ -836,9 +992,16 @@ export function SubscriptionsPage() {
                       </td>
                       <td className="p-4">
                         {pack ? (
-                          <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${COLOR_STYLES[pack.color].badge}`}>
-                            {pack.name}
-                          </span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${COLOR_STYLES[pack.color].badge}`}>
+                              {pack.name}
+                            </span>
+                            {assignment?.customFeatures && (
+                              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+                                Personnalisé
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-slate-400 italic text-xs">Non affecté</span>
                         )}
@@ -867,6 +1030,23 @@ export function SubscriptionsPage() {
                           >
                             <Edit2 size={16} />
                           </button>
+                          <button
+                            onClick={() => openCustomizeFeaturesModal(client)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                            title="Personnaliser les fonctionnalités (pack personnalisé)"
+                            disabled={!client.packs[0]}
+                          >
+                            <SlidersHorizontal size={16} />
+                          </button>
+                          {client.packs[0] && client.vehicleLimit !== null && (
+                            <button
+                              onClick={() => openQuotasModal(client)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                              title="Quotas (équipements à installer)"
+                            >
+                              <Settings size={16} />
+                            </button>
+                          )}
                           <button
                             onClick={() => openPaymentModal(client)}
                             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
@@ -899,8 +1079,9 @@ export function SubscriptionsPage() {
         title={packEditingId === null ? 'Créer un pack' : 'Modifier un pack'}
         size="xl"
       >
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 space-y-4">
+        <div className="flex flex-col min-h-[70vh]">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+            <div className="lg:col-span-1 space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Nom du pack</label>
               <input
@@ -943,6 +1124,64 @@ export function SubscriptionsPage() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Véhicules autorisés (quota)</label>
+              <input
+                type="number"
+                min={0}
+                value={packVehicleLimit}
+                onChange={(e) => setPackVehicleLimit(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Ce quota sera proposé par défaut lors de l’affectation du pack à un client.
+              </p>
+            </div>
+
+            <div className="border border-slate-200 rounded-lg p-3 bg-white">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-900">Types d’équipements supportés</div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    Cochez les types supportés. Les quotas seront définis dans la modale d’affectation client.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPackEquipments(equipmentTypes)}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
+                  title="Ajouter tous les types"
+                >
+                  Tout ajouter
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {equipmentTypes.map((t) => {
+                  const enabled = packEquipments.includes(t);
+                  return (
+                    <div key={t} className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 min-w-[140px]">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setPackEquipments((prev) => {
+                              if (checked) return [...prev, t];
+                              return prev.filter((x) => x !== t);
+                            });
+                          }}
+                          className="h-4 w-4 border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-slate-700">{t}</span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700 flex items-start gap-2">
               <CheckCircle2 className="mt-0.5 text-slate-500" size={16} />
               <div>
@@ -969,9 +1208,9 @@ export function SubscriptionsPage() {
                 Tout retirer
               </button>
             </div>
-          </div>
+            </div>
 
-          <div className="lg:col-span-2 space-y-3">
+            <div className="lg:col-span-2 space-y-3 flex flex-col min-h-0">
             <div className="flex items-center gap-3">
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -1001,13 +1240,13 @@ export function SubscriptionsPage() {
               </button>
             </div>
 
-            <div className="border border-slate-200 rounded-lg max-h-[420px] overflow-auto">
+            <div className="border border-slate-200 rounded-lg flex-1 min-h-0 overflow-auto">
               <div className="p-2">{renderFeatureTree(FEATURE_CATALOG)}</div>
             </div>
+            </div>
           </div>
-        </div>
 
-        <div className="flex justify-end gap-3 pt-5 mt-6 border-t border-slate-100">
+          <div className="flex justify-end gap-3 pt-5 mt-6 border-t border-slate-100">
           <button
             onClick={() => setIsPackModalOpen(false)}
             className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
@@ -1021,6 +1260,7 @@ export function SubscriptionsPage() {
           >
             Enregistrer
           </button>
+          </div>
         </div>
       </Modal>
 
@@ -1059,8 +1299,8 @@ export function SubscriptionsPage() {
           </div>
 
           {(() => {
-            const pack =
-              clientForPayment?.packId != null ? packById.get(clientForPayment.packId) : undefined;
+            const packId = clientForPayment?.packs?.[0]?.packId;
+            const pack = packId != null ? packById.get(packId) : undefined;
 
             if (!pack) return null;
 
@@ -1131,55 +1371,54 @@ export function SubscriptionsPage() {
           <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-3">
             <Package className="shrink-0 mt-0.5" size={16} />
             <p>
-              Sélectionnez le pack à affecter au client <strong>{clientToAssign?.name}</strong>.
+              Sélectionnez un pack à affecter au client <strong>{clientToAssign?.name}</strong>.
             </p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Pack</label>
             <div className="space-y-2">
-              {packs.map((pack) => (
-                <label
-                  key={pack.id}
-                  className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                    selectedPackId === pack.id
-                      ? `border-blue-500 bg-blue-50 ring-1 ${COLOR_STYLES[pack.color].ring}`
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="pack"
-                    checked={selectedPackId === pack.id}
-                    onChange={() => setSelectedPackId(pack.id)}
-                    className="mt-1 text-blue-600 focus:ring-blue-500 border-slate-300"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${COLOR_STYLES[pack.color].badge}`}>
-                        {pack.name}
-                      </span>
-                      <span className="text-[11px] text-slate-500">{pack.features.length} fonctionnalités</span>
-                      {selectedPackId === pack.id && <CheckCircle2 size={16} className="text-blue-600 ml-auto shrink-0" />}
+              {filteredPacks.map((pack) => {
+                const isSelected = selectedPackId === pack.id;
+                return (
+                  <label
+                    key={pack.id}
+                    className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                      isSelected
+                        ? `border-blue-500 bg-blue-50 ring-1 ${COLOR_STYLES[pack.color].ring}`
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pack"
+                      checked={isSelected}
+                      onChange={() => setSelectedPackId(pack.id)}
+                      className="mt-1 text-blue-600 focus:ring-blue-500 border-slate-300"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${COLOR_STYLES[pack.color].badge}`}>
+                          {pack.name}
+                        </span>
+                        <span className="text-[11px] text-slate-500">{pack.features.length} fonctionnalités</span>
+                        {isSelected && <CheckCircle2 size={16} className="text-blue-600 ml-auto shrink-0" />}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1 line-clamp-2">{pack.description || '—'}</div>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 line-clamp-2">{pack.description || '—'}</div>
-                  </div>
-                </label>
-              ))}
+                  </label>
+                );
+              })}
 
-              <label
-                className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                  selectedPackId === null ? 'border-slate-500 bg-slate-50 ring-1 ring-slate-500' : 'border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="pack"
-                  checked={selectedPackId === null}
-                  onChange={() => setSelectedPackId(null)}
-                  className="text-slate-600 focus:ring-slate-500 border-slate-300"
-                />
-                <span className="text-sm text-slate-500 italic">Aucun pack</span>
+              <label className="flex items-center justify-between gap-3 p-3 border rounded-lg border-slate-200 hover:bg-slate-50">
+                <span className="text-sm text-slate-600">Aucun pack</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPackId(null)}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Retirer
+                </button>
               </label>
             </div>
           </div>
@@ -1196,6 +1435,274 @@ export function SubscriptionsPage() {
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
             >
               Confirmer
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* --- QUOTAS MODAL --- */}
+      <Modal
+        isOpen={isQuotasModalOpen}
+        onClose={() => setIsQuotasModalOpen(false)}
+        title={`Quotas — ${clientToEditQuotas?.name ?? ''}`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Véhicules autorisés</label>
+              <input
+                type="number"
+                min={0}
+                value={quotaVehicleLimit}
+                disabled
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Ce quota vient de <strong>Gestion Clients</strong> (illimité = pas d’icône).
+              </p>
+            </div>
+          </div>
+
+          <div className="border border-slate-200 rounded-lg p-3 bg-white">
+            <div className="text-sm font-medium text-slate-900">Quotas par type d’équipement</div>
+            <div className="text-xs text-slate-500 mt-1">
+              Les types proviennent du pack affecté au client.
+            </div>
+            <div className="mt-3 space-y-2">
+              {Object.keys(quotaEquipmentLimits).length === 0 && (
+                <div className="text-xs text-slate-400 italic">Aucun type (ou aucun pack affecté).</div>
+              )}
+              {Object.entries(quotaEquipmentLimits).map(([t, v]) => (
+                <div key={t} className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-slate-700">{t}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={v ?? 0}
+                    onChange={(e) =>
+                      setQuotaEquipmentLimits((prev) => ({
+                        ...prev,
+                        [t]: Math.max(0, Number(e.target.value))
+                      }))
+                    }
+                    className="w-28 px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {quotaError && (
+            <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">
+              {quotaError}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              onClick={() => setIsQuotasModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => {
+                if (!clientToEditQuotas) return;
+                const limit = clientToEditQuotas.vehicleLimit;
+                const total = Object.values(quotaEquipmentLimits).reduce((acc, v) => acc + (Number(v) || 0), 0);
+                if (typeof limit === 'number' && total > limit) {
+                  setQuotaError(
+                    `Le total des équipements à installer (${total}) ne doit pas dépasser les véhicules autorisés (${limit}).`
+                  );
+                  return;
+                }
+                setClients((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== clientToEditQuotas.id) return c;
+                    const a = c.packs[0];
+                    if (!a) return c;
+                    return {
+                      ...c,
+                      packs: [
+                        {
+                          ...a,
+                          equipmentLimits: quotaEquipmentLimits
+                        }
+                      ]
+                    };
+                  })
+                );
+                setIsQuotasModalOpen(false);
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* --- CUSTOMIZE FEATURES MODAL --- */}
+      <Modal
+        isOpen={isCustomizeModalOpen}
+        onClose={() => setIsCustomizeModalOpen(false)}
+        title={`Fonctionnalités — ${clientToCustomize?.name ?? ''}`}
+        size="xl"
+      >
+        <div className="space-y-4">
+          <div className="bg-indigo-50 text-indigo-900 p-3 rounded-lg text-sm">
+            Sélectionnez/désélectionnez des fonctionnalités pour rendre ce client <strong>“Pack personnalisé”</strong>.
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="Rechercher une fonctionnalité…"
+                value={featureSearch}
+                onChange={(e) => setFeatureSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-shadow"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpandedNodes(new Set(FEATURE_CATALOG.map((m) => m.id)))}
+              className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Déplier
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpandedNodes(new Set())}
+              className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Réduire
+            </button>
+          </div>
+
+          <div className="border border-slate-200 rounded-lg max-h-[55vh] overflow-auto">
+            <div className="p-2">
+              {(() => {
+                // version locale du tree, basée sur customSelectedFeatures
+                const renderTree = (nodes: FeatureNode[], depth = 0): React.ReactNode[] => {
+                  return nodes
+                    .filter((n) => (featureSearch.trim() ? doesNodeMatch(n) : true))
+                    .map((node) => {
+                      const isLeaf = !node.children || node.children.length === 0;
+                      const expanded = expandedNodes.has(node.id);
+                      const pad = depth * 12;
+
+                      if (isLeaf) {
+                        const checked = customSelectedFeatures.has(node.id);
+                        return (
+                          <label
+                            key={node.id}
+                            className="flex items-start gap-3 py-2 px-2 rounded-md hover:bg-slate-50 cursor-pointer"
+                            style={{ paddingLeft: 12 + pad }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setCustomSelectedFeatures((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(node.id)) next.delete(node.id);
+                                  else next.add(node.id);
+                                  return next;
+                                });
+                              }}
+                              className="mt-0.5 h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="text-sm text-slate-700">{node.label}</span>
+                          </label>
+                        );
+                      }
+
+                      const { selected, total } = countSelectedLeaves(node, customSelectedFeatures);
+                      const isAllSelected = total > 0 && selected === total;
+                      const isPartiallySelected = selected > 0 && selected < total;
+
+                      return (
+                        <div key={node.id} className="rounded-md">
+                          <div
+                            className="flex items-center gap-2 py-2 px-2 rounded-md hover:bg-slate-50"
+                            style={{ paddingLeft: 8 + pad }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleNodeExpanded(node.id)}
+                              className="p-1 rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-500"
+                              aria-label={expanded ? 'Réduire' : 'Déplier'}
+                            >
+                              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCustomSelectedFeatures(toggleAllLeaves(node, customSelectedFeatures, !isAllSelected))}
+                              className={`h-4 w-4 rounded border flex items-center justify-center ${
+                                isAllSelected
+                                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                                  : isPartiallySelected
+                                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                                    : 'bg-white border-slate-300 text-slate-600'
+                              }`}
+                              title="Sélectionner/désélectionner tout"
+                            >
+                              {(isAllSelected || isPartiallySelected) && <Check size={12} />}
+                            </button>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm text-slate-900 truncate">{node.label}</span>
+                                <span className="text-[11px] text-slate-500">
+                                  {selected}/{total}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          {expanded && node.children && <div className="pl-2">{renderTree(node.children, depth + 1)}</div>}
+                        </div>
+                      );
+                    });
+                };
+
+                return renderTree(FEATURE_CATALOG);
+              })()}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              onClick={() => setIsCustomizeModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => {
+                if (!clientToCustomize) return;
+                setClients((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== clientToCustomize.id) return c;
+                    const a = c.packs[0];
+                    if (!a) return c;
+                    return {
+                      ...c,
+                      packs: [
+                        {
+                          ...a,
+                          customFeatures: Array.from(customSelectedFeatures)
+                        }
+                      ]
+                    };
+                  })
+                );
+                setIsCustomizeModalOpen(false);
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+            >
+              Enregistrer
             </button>
           </div>
         </div>

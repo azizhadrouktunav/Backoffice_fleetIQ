@@ -1,879 +1,1044 @@
-import React, { useMemo, useState, Component } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  Plus,
-  Search,
+  CheckCircle2,
   Edit2,
   Eye,
-  Trash2,
-  Server as ServerIcon,
-  Wifi,
-  Cpu,
-  CheckCircle2,
+  Settings,
   XCircle,
-  Building2,
-  User,
-  Car,
-  Calendar,
+  Plus,
+  ArrowLeftRight,
+  Boxes,
+  Undo2,
+  Store,
+  Cpu,
   Hash,
-  Link2,
+  Wifi,
+  Server as ServerIcon,
+  Calendar,
   MapPin,
   Gauge,
+  Activity,
   Fuel,
   Thermometer,
-  Activity,
-  Navigation } from
-'lucide-react';
+  Navigation,
+  User as UserIcon,
+  Car as CarIcon
+} from 'lucide-react';
 import { Modal } from '../components/Modal';
-import { StatCard } from '../components/StatCard';
-import { PeriodFilter, PeriodKey } from '../components/PeriodFilter';
-import { SearchableSelect } from '../components/SearchableSelect';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useFleetStore } from '../state/FleetStore';
+import {
+  MapContainer as MapContainerBase,
+  TileLayer as TileLayerBase,
+  Marker as MarkerBase,
+  Popup
+} from 'react-leaflet';
+// @ts-expect-error - leaflet has no bundled types in this project (same usage as ClientsPage)
 import L from 'leaflet';
-// Fix for default marker icon in react-leaflet
+
+// Cast to any to bypass missing @types/leaflet declarations
+const MapContainer = MapContainerBase as any;
+const TileLayer = TileLayerBase as any;
+const Marker = MarkerBase as any;
+
 const customMarkerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl:
-  'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
   shadowSize: [41, 41]
 });
-// --- Mock Data ---
-const mockClients = [
-'Tunav',
-'Transport Express',
-'Global Logistics',
-'Livraison Rapide',
-'Auto Fleet Pro'];
 
-const mockResellers = ['Tunav', 'Global Logistics', 'Auto Fleet Pro'];
-// Reseller -> clients mapping
-const resellerClients: Record<string, string[]> = {
-  Tunav: ['Tunav'],
-  'Global Logistics': ['Transport Express', 'Livraison Rapide'],
-  'Auto Fleet Pro': ['Transport Express', 'Auto Fleet Pro']
+// Donnée mock par défaut pour les équipements qui n'ont pas encore communiqué
+const DEFAULT_POSITION = {
+  dateLocal: '18/04/2025 00:48:50',
+  latitude: 48.8566,
+  longitude: 2.3522,
+  vitesse: 16,
+  etat: 'Connectée',
+  niveauCarburant: 33,
+  totalCarburant: 5122.44,
+  rpm: 960,
+  temperatureMoteur: 80,
+  kilometrage: 64085.301
 };
-function assignPartyLabel(reseller: string, client: string) {
-  return reseller === client ?
-  `${client} (revendeur et client)` :
-  `${client} · ${reseller}`;
-}
-const assignPartyLabels: string[] = [];
-const assignPartyByLabel: Record<string, { reseller: string; client: string }> = {};
-for (const [reseller, clients] of Object.entries(resellerClients)) {
-  for (const client of clients) {
-    const label = assignPartyLabel(reseller, client);
-    assignPartyLabels.push(label);
-    assignPartyByLabel[label] = { reseller, client };
-  }
-}
-assignPartyLabels.sort((a, b) => a.localeCompare(b, 'fr'));
-// Client -> vehicles mapping
-const clientVehicles: Record<string, string[]> = {
-  Tunav: [],
-  'Transport Express': ['AB-123-CD', 'EF-456-GH'],
-  'Global Logistics': ['IJ-789-KL'],
-  'Livraison Rapide': ['MN-012-OP'],
-  'Auto Fleet Pro': ['QR-345-ST']
-};
-const initialMockEquipments = [
-{
-  id: 1,
-  serial: 'EQ-2024-001',
-  type: 'FMB120',
-  sim: '+33612345678',
-  simCallNumber: '0612345678',
-  iccid: '89330123456789012345',
-  server: 'Srv-Paris-1',
-  port: '5027',
-  client: 'Transport Express',
-  reseller: 'Auto Fleet Pro',
-  car: 'AB-123-CD',
-  isInstalled: true,
-  firstSendDate: '2024-01-15',
-  contractDate: '2024-01-01',
-  lastPosition: {
-    dateLocal: '18/04/2025 00:48:50',
-    latitude: 48.8566,
-    longitude: 2.3522,
-    vitesse: 16,
-    etat: 'Connectée',
-    niveauCarburant: 33,
-    totalCarburant: 5122.44,
-    rpm: 960,
-    temperatureMoteur: 80,
-    kilometrage: 64085.301
-  }
-},
-{
-  id: 2,
-  serial: 'EQ-2024-002',
-  type: 'FMC130',
-  sim: '+33687654321',
-  simCallNumber: '0687654321',
-  iccid: '89330987654321098765',
-  server: 'Srv-Paris-1',
-  port: '5027',
-  client: 'Global Logistics',
-  reseller: 'Global Logistics',
-  car: 'Unassigned',
-  isInstalled: false,
-  firstSendDate: '',
-  contractDate: '2024-02-01',
-  lastPosition: {
-    dateLocal: '15/04/2025 14:22:10',
-    latitude: 48.8738,
-    longitude: 2.295,
-    vitesse: 0,
-    etat: 'Déconnectée',
-    niveauCarburant: 58,
-    totalCarburant: 3200.12,
-    rpm: 0,
-    temperatureMoteur: 25,
-    kilometrage: 42150.8
-  }
-},
-{
-  id: 3,
-  serial: 'EQ-2024-003',
-  type: 'FMB920',
-  sim: '+33611223344',
-  simCallNumber: '0611223344',
-  iccid: '89330112233445566778',
-  server: 'Srv-Lyon-1',
-  port: '5028',
-  client: 'Auto Fleet Pro',
-  reseller: 'Auto Fleet Pro',
-  car: 'EF-456-GH',
-  isInstalled: true,
-  firstSendDate: '2024-03-10',
-  contractDate: '2024-03-01',
-  lastPosition: {
-    dateLocal: '17/04/2025 11:05:22',
-    latitude: 43.6047,
-    longitude: 1.4442,
-    vitesse: 35,
-    etat: 'Connectée',
-    niveauCarburant: 60,
-    totalCarburant: 7200.3,
-    rpm: 1500,
-    temperatureMoteur: 85,
-    kilometrage: 78500.2
-  }
-},
-{
-  id: 4,
-  serial: 'EQ-2024-004',
-  type: 'FMB120',
-  sim: '+33699887766',
-  simCallNumber: '0699887766',
-  iccid: '89330998877665544332',
-  server: 'Srv-Lyon-1',
-  port: '5028',
-  client: 'Tunav',
-  reseller: 'Tunav',
-  car: 'Unassigned',
-  isInstalled: false,
-  firstSendDate: '',
-  contractDate: '',
-  lastPosition: null
-},
-{
-  id: 5,
-  serial: 'EQ-2024-005',
-  type: 'FMC130',
-  sim: '+33655443322',
-  simCallNumber: '0655443322',
-  iccid: '89330554433221100998',
-  server: 'Srv-Paris-1',
-  port: '5027',
-  client: 'Livraison Rapide',
-  reseller: 'Auto Fleet Pro',
-  car: 'IJ-789-KL',
-  isInstalled: true,
-  firstSendDate: '2024-04-05',
-  contractDate: '2024-04-01',
-  lastPosition: {
-    dateLocal: '17/04/2025 09:15:30',
-    latitude: 45.764,
-    longitude: 4.8357,
-    vitesse: 45,
-    etat: 'Connectée',
-    niveauCarburant: 72,
-    totalCarburant: 8450.55,
-    rpm: 1800,
-    temperatureMoteur: 92,
-    kilometrage: 98230.15
-  }
-},
-{
-  id: 6,
-  serial: 'EQ-2024-006',
-  type: 'FMB920',
-  sim: '+33622334455',
-  simCallNumber: '0622334455',
-  iccid: '89330223344556677889',
-  server: 'Srv-Lyon-1',
-  port: '5028',
-  client: 'Transport Express',
-  reseller: 'Global Logistics',
-  car: 'Unassigned',
-  isInstalled: true,
-  firstSendDate: '2024-04-20',
-  contractDate: '2024-04-15',
-  lastPosition: {
-    dateLocal: '16/04/2025 18:40:15',
-    latitude: 43.2965,
-    longitude: 5.3698,
-    vitesse: 0,
-    etat: 'Connectée',
-    niveauCarburant: 80,
-    totalCarburant: 4500.0,
-    rpm: 0,
-    temperatureMoteur: 30,
-    kilometrage: 32100.5
-  }
-}];
 
-// --- Custom Split Stat Card Component ---
-function SplitStatCard({
-  title,
-  val1,
-  val2,
-  label1,
-  label2,
-  icon: Icon,
-  color1 = 'text-emerald-600',
-  color2 = 'text-slate-500'
-}: any) {
-  return (
-    <div className="bg-white p-5 rounded-lg border border-slate-200 border-l-4 border-l-blue-500 shadow-sm transition-all">
-      <div className="flex justify-between items-start mb-3">
-        <h3 className="text-slate-500 font-medium text-xs uppercase tracking-wide">
-          {title}
-        </h3>
-        {Icon &&
-        <div className="p-2 rounded-lg bg-blue-50">
-            <Icon className="text-blue-600" size={18} />
-          </div>
-        }
-      </div>
-      <div className="flex items-center gap-4 mb-2">
-        <div className="flex flex-col">
-          <span className={`text-2xl font-semibold ${color1}`}>{val1}</span>
-          <span className="text-[10px] uppercase font-medium text-slate-400">
-            {label1}
-          </span>
-        </div>
-        <div className="h-8 w-px bg-slate-200"></div>
-        <div className="flex flex-col">
-          <span className={`text-2xl font-semibold ${color2}`}>{val2}</span>
-          <span className="text-[10px] uppercase font-medium text-slate-400">
-            {label2}
-          </span>
-        </div>
-      </div>
-    </div>);
-
-}
 export function EquipmentsPage() {
-  const [equipments, setEquipments] = useState(initialMockEquipments);
-  // Modals state
-  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [selectedEquipment, setSelectedEquipment] = useState<any>(null);
-  // Assignment modal state
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [equipmentToAssign, setEquipmentToAssign] = useState<any>(null);
-  const [assignParty, setAssignParty] = useState('');
-  const [assignVehicle, setAssignVehicle] = useState('');
-  // Stats filters
-  const [statsPeriod, setStatsPeriod] = useState<PeriodKey>('30d');
-  const [statsClient, setStatsClient] = useState('');
-  const [statsReseller, setStatsReseller] = useState('');
-  // Search & status filter
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<
-    '' | 'installed' | 'not_installed'>(
-    '');
-  const [vehicleFilter, setVehicleFilter] = useState<
-    '' | 'assigned' | 'not_assigned'>(
-    '');
-  // Position map state
+  const { currentUserRole, currentUserName, clients, setClients, equipments, setEquipments, packs } = useFleetStore();
+  const packById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
+  const isTunavUser = currentUserRole === 'Tunav';
+
+  const [activeTab, setActiveTab] = useState<'clients' | 'stock' | 'resellers'>('clients');
+
+  const [isResellerEquipmentsOpen, setIsResellerEquipmentsOpen] = useState(false);
+  const [resellerToView, setResellerToView] = useState<(typeof clients)[number] | null>(null);
+
+  const [isClientEquipmentsOpen, setIsClientEquipmentsOpen] = useState(false);
+  const [clientToView, setClientToView] = useState<(typeof clients)[number] | null>(null);
+
+  const [equipmentToEdit, setEquipmentToEdit] = useState<any | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [equipmentToView, setEquipmentToView] = useState<any | null>(null);
   const [showPositionMap, setShowPositionMap] = useState(false);
-  // Handlers
-  const openAddModal = () => {
-    setSelectedEquipment(null);
-    setIsAddEditModalOpen(true);
+
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [equipmentToInstall, setEquipmentToInstall] = useState<any | null>(null);
+  const [installPlate, setInstallPlate] = useState<string>('');
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
+  const [stockToAssign, setStockToAssign] = useState<any | null>(null);
+  const [assignClientName, setAssignClientName] = useState<string>('');
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  const [isAssignResellerOpen, setIsAssignResellerOpen] = useState(false);
+  const [assignResellerName, setAssignResellerName] = useState<string>('');
+
+  const [isAddStockOpen, setIsAddStockOpen] = useState(false);
+  const [newStock, setNewStock] = useState({
+    serial: '',
+    sim: '',
+    simCallNumber: '',
+    iccid: '',
+    server: '',
+    port: '',
+    firstSendDate: '',
+    contractDate: '',
+    type: 'FMC130'
+  });
+
+  const [isQuotasOpen, setIsQuotasOpen] = useState(false);
+  const [clientToQuota, setClientToQuota] = useState<(typeof clients)[number] | null>(null);
+  const [quotaEquipmentLimits, setQuotaEquipmentLimits] = useState<Record<string, number>>({});
+  const [quotaError, setQuotaError] = useState<string | null>(null);
+
+  const installedCountByClient = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of equipments) {
+      if (!e.isInstalled) continue;
+      m.set(e.client, (m.get(e.client) ?? 0) + 1);
+    }
+    return m;
+  }, [equipments]);
+
+  const stockClientName = useMemo(
+    () => (currentUserRole === 'Tunav' ? 'Tunav_Stock' : `${currentUserName}_Stock`),
+    [currentUserRole, currentUserName]
+  );
+  const stockEquipments = useMemo(
+    () => equipments.filter((e) => e.client === stockClientName),
+    [equipments, stockClientName]
+  );
+
+  const totalInstalled = useMemo(() => equipments.filter((e) => e.isInstalled).length, [equipments]);
+  const totalNotInstalled = useMemo(() => equipments.filter((e) => !e.isInstalled).length, [equipments]);
+
+  // Resellers attached to Tunav (used by the "Affectation Revendeur" tab)
+  const resellersList = useMemo(
+    () =>
+      clients
+        .filter(
+          (c) =>
+            c.type === 'Revendeur' &&
+            c.name !== 'Tunav' &&
+            !c.name.endsWith('_Stock') &&
+            c.reseller === 'Tunav'
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [clients]
+  );
+
+  // Per-reseller stats based on equipments where reseller === r.name
+  const resellerStatsByName = useMemo(() => {
+    const m = new Map<string, { total: number; inStock: number; assigned: number; installed: number }>();
+    for (const e of equipments) {
+      if (!e.reseller || e.reseller === 'Tunav') continue;
+      const cur = m.get(e.reseller) ?? { total: 0, inStock: 0, assigned: 0, installed: 0 };
+      cur.total += 1;
+      if (e.client === `${e.reseller}_Stock`) cur.inStock += 1;
+      else cur.assigned += 1;
+      if (e.isInstalled) cur.installed += 1;
+      m.set(e.reseller, cur);
+    }
+    return m;
+  }, [equipments]);
+
+  const resellerEquipments = useMemo(() => {
+    if (!resellerToView) return [];
+    return equipments.filter((e) => e.reseller === resellerToView.name);
+  }, [equipments, resellerToView]);
+
+  const openResellerEquipments = (r: (typeof clients)[number]) => {
+    setResellerToView(r);
+    setIsResellerEquipmentsOpen(true);
   };
-  const openEditModal = (eq: any) => {
-    setSelectedEquipment(eq);
-    setIsAddEditModalOpen(true);
+
+  const openQuotas = (c: (typeof clients)[number]) => {
+    const a = c.packs[0];
+    const pack = a ? packById.get(a.packId) : undefined;
+    const supported = pack?.supportedEquipments ?? [];
+    const base: Record<string, number> = {};
+    for (const t of supported) base[t] = a?.equipmentLimits?.[t] ?? 0;
+    setClientToQuota(c);
+    setQuotaEquipmentLimits(base);
+    setQuotaError(null);
+    setIsQuotasOpen(true);
   };
-  const openViewModal = (eq: any) => {
-    setSelectedEquipment(eq);
-    setShowPositionMap(false);
-    setIsViewModalOpen(true);
-  };
-  const openDeleteModal = (eq: any) => {
-    setSelectedEquipment(eq);
-    setIsDeleteModalOpen(true);
-  };
-  const openAssignModal = (eq: any) => {
-    setEquipmentToAssign(eq);
-    const isDefaultTunav = eq.reseller === 'Tunav' && eq.client === 'Tunav';
-    setAssignParty(isDefaultTunav ? '' : assignPartyLabel(eq.reseller, eq.client));
-    setAssignVehicle(eq.car !== 'Unassigned' ? eq.car : '');
-    setIsAssignModalOpen(true);
-  };
-  const handleAssign = () => {
-    if (!equipmentToAssign) return;
-    const pair = assignParty ?
-    assignPartyByLabel[assignParty] :
-    { reseller: 'Tunav', client: 'Tunav' };
-    const reseller = pair?.reseller ?? 'Tunav';
-    const client = pair?.client ?? 'Tunav';
-    setEquipments((prev) =>
-    prev.map((eq) =>
-    eq.id === equipmentToAssign.id ?
-    {
-      ...eq,
-      reseller,
-      client,
-      car: assignVehicle || 'Unassigned'
-    } :
-    eq
-    )
+
+  const saveQuotas = () => {
+    if (!clientToQuota) return;
+    const limit = clientToQuota.vehicleLimit;
+    const total = Object.values(quotaEquipmentLimits).reduce((acc, v) => acc + (Number(v) || 0), 0);
+    if (typeof limit === 'number' && total > limit) {
+      setQuotaError(`Le total (${total}) ne doit pas dépasser les véhicules autorisés (${limit}).`);
+      return;
+    }
+    setClients((prev) =>
+      prev.map((c) => {
+        if (c.id !== clientToQuota.id) return c;
+        const a = c.packs[0];
+        if (!a) return c;
+        return {
+          ...c,
+          packs: [
+            {
+              ...a,
+              equipmentLimits: { ...a.equipmentLimits, ...(quotaEquipmentLimits as any) }
+            }
+          ]
+        };
+      })
     );
-    setIsAssignModalOpen(false);
+    setIsQuotasOpen(false);
   };
-  // Derived Stats
-  const filteredStatsEquipments = useMemo(() => {
-    return equipments.filter((eq) => {
-      const matchClient = statsClient ? eq.client === statsClient : true;
-      const matchReseller = statsReseller ? eq.reseller === statsReseller : true;
-      return matchClient && matchReseller;
+
+  const openClientEquipments = (c: (typeof clients)[number]) => {
+    setClientToView(c);
+    setIsClientEquipmentsOpen(true);
+  };
+
+  const clientEquipments = useMemo(() => {
+    if (!clientToView) return [];
+    return equipments.filter((e) => e.client === clientToView.name);
+  }, [equipments, clientToView]);
+
+  const cancelAssignmentToTunavStock = (equipmentId: number) => {
+    setEquipments((prev) =>
+      prev.map((e) =>
+        e.id === equipmentId
+          ? {
+              ...e,
+              client: stockClientName,
+              reseller: currentUserName,
+              car: 'Unassigned',
+              isInstalled: false
+            }
+          : e
+      )
+    );
+  };
+
+  const openInstallModal = (eq: any) => {
+    const c = clients.find((x) => x.name === eq.client);
+    if (!c) return;
+    const limit = c.vehicleLimit;
+    const installed = installedCountByClient.get(eq.client) ?? 0;
+    if (typeof limit === 'number' && installed >= limit) {
+      window.alert(`Limite atteinte: ${installed}/${limit}.`);
+      return;
+    }
+    setEquipmentToInstall(eq);
+    setInstallPlate(eq.car && eq.car !== 'Unassigned' ? eq.car : '');
+    setInstallError(null);
+    setIsInstallModalOpen(true);
+  };
+
+  const confirmInstall = () => {
+    if (!equipmentToInstall) return;
+    const plate = installPlate.trim();
+    if (!plate) {
+      setInstallError('Veuillez saisir une immatriculation.');
+      return;
+    }
+    setEquipments((prev) =>
+      prev.map((e) => (e.id === equipmentToInstall.id ? { ...e, isInstalled: true, car: plate } : e))
+    );
+    setIsInstallModalOpen(false);
+  };
+
+  const openEditEquipment = (eq: any) => {
+    setEquipmentToEdit({ ...eq });
+    setIsEditModalOpen(true);
+  };
+
+  const saveEditEquipment = () => {
+    if (!equipmentToEdit) return;
+    setEquipments((prev) => prev.map((e) => (e.id === equipmentToEdit.id ? { ...e, ...equipmentToEdit } : e)));
+    setIsEditModalOpen(false);
+  };
+
+  const openAssignToClient = (eq: any) => {
+    setStockToAssign(eq);
+    setAssignClientName('');
+    setAssignError(null);
+    setIsAssignClientOpen(true);
+  };
+
+  const confirmAssignToClient = () => {
+    if (!stockToAssign) return;
+    const c = clients.find((x) => x.name === assignClientName);
+    if (!c) return;
+    const limit = c.vehicleLimit;
+    const installed = installedCountByClient.get(c.name) ?? 0;
+    if (typeof limit === 'number' && installed >= limit) {
+      setAssignError(`Limite atteinte: ${installed}/${limit}.`);
+      return;
+    }
+    setEquipments((prev) =>
+      prev.map((e) =>
+        e.id === stockToAssign.id
+          ? { ...e, client: c.name, reseller: c.reseller, car: 'Unassigned' }
+          : e
+      )
+    );
+    setIsAssignClientOpen(false);
+  };
+
+  const openAssignToReseller = (eq: any) => {
+    setStockToAssign(eq);
+    setAssignResellerName('');
+    setAssignError(null);
+    setIsAssignResellerOpen(true);
+  };
+
+  const confirmAssignToReseller = () => {
+    if (!stockToAssign) return;
+    if (currentUserRole !== 'Tunav') return;
+    const r = clients.find((x) => x.type === 'Revendeur' && x.name === assignResellerName);
+    if (!r) return;
+    setEquipments((prev) =>
+      prev.map((e) =>
+        e.id === stockToAssign.id
+          ? { ...e, reseller: r.name, client: `${r.name}_Stock`, car: 'Unassigned', isInstalled: false }
+          : e
+      )
+    );
+    setIsAssignResellerOpen(false);
+  };
+
+  const openAddStock = () => {
+    setNewStock({
+      serial: '',
+      sim: '',
+      simCallNumber: '',
+      iccid: '',
+      server: '',
+      port: '',
+      firstSendDate: '',
+      contractDate: '',
+      type: 'FMC130'
     });
-  }, [equipments, statsClient, statsReseller, statsPeriod]);
-  const stats = useMemo(() => {
-    const total = filteredStatsEquipments.length;
-    const installed = filteredStatsEquipments.filter(
-      (eq) => eq.isInstalled
-    ).length;
-    const notInstalled = total - installed;
-    const assignedClient = filteredStatsEquipments.filter(
-      (eq) => eq.client !== 'Tunav'
-    ).length;
-    const notAssignedClient = total - assignedClient;
-    const assignedCar = filteredStatsEquipments.filter(
-      (eq) => eq.car !== 'Unassigned'
-    ).length;
-    const notAssignedCar = total - assignedCar;
-    return {
-      total,
-      installed,
-      notInstalled,
-      assignedClient,
-      notAssignedClient,
-      assignedCar,
-      notAssignedCar
-    };
-  }, [filteredStatsEquipments]);
-  // Derived Table Data — uses same filters as stats + search + status
-  const filteredTableEquipments = useMemo(() => {
-    return filteredStatsEquipments.filter((eq) => {
-      const matchSearch =
-      searchQuery === '' ||
-      eq.serial.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      eq.sim.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchStatus =
-      statusFilter === '' ?
-      true :
-      statusFilter === 'installed' ?
-      eq.isInstalled :
-      !eq.isInstalled;
-      const matchVehicle =
-      vehicleFilter === '' ?
-      true :
-      vehicleFilter === 'assigned' ?
-      eq.client !== 'Tunav' :
-      eq.client === 'Tunav';
-      return matchSearch && matchStatus && matchVehicle;
-    });
-  }, [filteredStatsEquipments, searchQuery, statusFilter, vehicleFilter]);
+    setIsAddStockOpen(true);
+  };
+
+  const confirmAddStock = () => {
+    const serial = newStock.serial.trim();
+    if (!serial) return;
+    const nextId = Math.max(0, ...equipments.map((e) => e.id)) + 1;
+    setEquipments((prev) => [
+      {
+        id: nextId,
+        serial,
+        type: newStock.type,
+        sim: newStock.sim.trim(),
+        simCallNumber: newStock.simCallNumber.trim(),
+        iccid: newStock.iccid.trim(),
+        server: newStock.server.trim(),
+        port: newStock.port.trim(),
+        firstSendDate: newStock.firstSendDate,
+        contractDate: newStock.contractDate,
+        client: stockClientName,
+        reseller: currentUserName,
+        car: 'Unassigned',
+        isInstalled: false,
+        lastPosition: null
+      },
+      ...prev
+    ]);
+    setIsAddStockOpen(false);
+  };
+
   return (
-    <div className="space-y-4 pb-8">
+    <div className="space-y-6 pb-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">
-          Gestion des Équipements
-        </h1>
-        <button
-          onClick={openAddModal}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm">
-          
-          <Plus size={16} />
-          Ajouter un équipement
-        </button>
+        <h1 className="text-xl font-semibold text-slate-900">Gestion des Équipements</h1>
+        {activeTab === 'stock' && currentUserRole === 'Tunav' && (
+          <button
+            onClick={openAddStock}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Plus size={16} />
+            Ajouter un équipement
+          </button>
+        )}
       </div>
 
-      {/* --- STATS SECTION --- */}
-      <section className="space-y-4">
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-sm font-medium text-slate-700 shrink-0">
-              <Cpu size={18} className="text-blue-600" />
-              Filtres
-            </div>
-            <div className="relative flex-1">
-              <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                size={14} />
-              
-              <input
-                type="text"
-                placeholder="Rechercher N° série, SIM..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow" />
-              
-            </div>
+      {/* Stats cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+          <div className="text-xs text-slate-500 uppercase font-medium">
+            Stock {currentUserRole === 'Tunav' ? 'Tunav' : currentUserName}
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <PeriodFilter value={statsPeriod} onChange={setStatsPeriod} />
-            <select
-              value={statsClient}
-              onChange={(e) => setStatsClient(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              
-              <option value="">Tous les clients</option>
-              {mockClients.map((c) =>
-              <option key={c} value={c}>
-                  {c}
-                </option>
-              )}
-            </select>
-            <select
-              value={statsReseller}
-              onChange={(e) => setStatsReseller(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              
-              <option value="">Tous les revendeurs</option>
-              {mockResellers.map((r) =>
-              <option key={r} value={r}>
-                  {r}
-                </option>
-              )}
-            </select>
-          </div>
+          <div className="text-2xl font-semibold text-slate-900 mt-1">{stockEquipments.length}</div>
+        </div>
+        <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+          <div className="text-xs text-slate-500 uppercase font-medium">Installés</div>
+          <div className="text-2xl font-semibold text-emerald-600 mt-1">{totalInstalled}</div>
+        </div>
+        <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+          <div className="text-xs text-slate-500 uppercase font-medium">Non installés</div>
+          <div className="text-2xl font-semibold text-amber-600 mt-1">{totalNotInstalled}</div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+        <div className="p-2 border-b border-slate-100 bg-slate-50/50 flex gap-2">
+          <button
+            onClick={() => setActiveTab('clients')}
+            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              activeTab === 'clients' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-white'
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <ArrowLeftRight size={16} /> Affectation Clients
+            </span>
+          </button>
+          {isTunavUser && (
+            <button
+              onClick={() => setActiveTab('resellers')}
+              className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                activeTab === 'resellers' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-white'
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Store size={16} /> Affectation Revendeur
+              </span>
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab('stock')}
+            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              activeTab === 'stock' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-white'
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Boxes size={16} /> Stock équipements
+            </span>
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="Total Équipements"
-            value={stats.total.toString()}
-            subtitle="Sur la période sélectionnée"
-            icon={Cpu} />
-          
-          <SplitStatCard
-            title="Installation"
-            val1={stats.installed}
-            label1="Installés"
-            val2={stats.notInstalled}
-            label2="Non installés"
-            icon={CheckCircle2}
-            color1="text-emerald-600"
-            color2="text-amber-500" />
-          
-          <SplitStatCard
-            title="Affectation Client"
-            val1={stats.assignedClient}
-            label1="Affectés"
-            val2={stats.notAssignedClient}
-            label2="Non affectés"
-            icon={User}
-            color1="text-blue-600"
-            color2="text-slate-400" />
-          
-          <SplitStatCard
-            title="Affectation Véhicule"
-            val1={stats.assignedCar}
-            label1="Affectés"
-            val2={stats.notAssignedCar}
-            label2="Non affectés"
-            icon={Car}
-            color1="text-indigo-600"
-            color2="text-slate-400" />
-          
-        </div>
-      </section>
+        <div className="overflow-x-auto">
+          {activeTab === 'clients' && (
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
+                  <th className="p-4 font-medium">Client</th>
+                  <th className="p-4 font-medium">Installation</th>
+                  <th className="p-4 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm divide-y divide-slate-50">
+                {(() => {
+                  // Règle d’affichage:
+                  // - On n’affiche QUE les clients simples du user courant
+                  //   (les revendeurs sont gérés dans l’onglet "Affectation Revendeur")
+                  const visibleClients = clients
+                    .filter((c) => !c.name.endsWith('_Stock') && c.name !== 'Tunav')
+                    .filter((c) => c.reseller === currentUserName)
+                    .filter((c) => c.type === 'Simple')
+                    .sort((a, b) => a.name.localeCompare(b.name));
 
-      {/* --- TABLE SECTION --- */}
-      <section className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-        {/* Status filter bar */}
-        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-4 bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wide shrink-0">
-              Statut :
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setStatusFilter('')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${statusFilter === '' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
-                
-                Tous
-              </button>
-              <button
-                onClick={() => setStatusFilter('installed')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${statusFilter === 'installed' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
-                
-                <CheckCircle2 size={12} />
-                Installé
-              </button>
-              <button
-                onClick={() => setStatusFilter('not_installed')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${statusFilter === 'not_installed' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
-                
-                <XCircle size={12} />
-                Non installé
-              </button>
+                  const rows: React.ReactNode[] = [];
+
+                  for (const c of visibleClients) {
+                    const installed = installedCountByClient.get(c.name) ?? 0;
+                    const total = equipments.filter((e) => e.client === c.name).length;
+                    rows.push(
+                      <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-4">
+                          <div className="font-medium text-slate-900">{c.name}</div>
+                        </td>
+                        <td className="p-4">
+                          <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+                            {`${installed}/${total}`}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {c.vehicleLimit !== null && (
+                              <button
+                                onClick={() => openQuotas(c)}
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                                title="Quotas"
+                              >
+                                <Settings size={16} />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => openClientEquipments(c)}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                              title="Voir équipements"
+                            >
+                              <Eye size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return rows;
+                })()}
+              </tbody>
+            </table>
+          )}
+
+          {activeTab === 'stock' && (
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
+                  <th className="p-4 font-medium">N° série</th>
+                  <th className="p-4 font-medium">Type</th>
+                  <th className="p-4 font-medium">SIM</th>
+                  <th className="p-4 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm divide-y divide-slate-50">
+                {stockEquipments.map((e) => (
+                  <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4 font-medium text-slate-900">{e.serial}</td>
+                    <td className="p-4 text-slate-700">{e.type}</td>
+                    <td className="p-4 text-slate-600">{e.sim}</td>
+                    <td className="p-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openAssignToClient(e)}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                        >
+                          Affecter client
+                        </button>
+                        {currentUserRole === 'Tunav' && (
+                          <button
+                            onClick={() => openAssignToReseller(e)}
+                            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            Affecter revendeur
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {stockEquipments.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-slate-500">
+                      Aucun équipement en stock.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {activeTab === 'resellers' && isTunavUser && (
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
+                  <th className="p-4 font-medium">Revendeur</th>
+                  <th className="p-4 font-medium">Contact</th>
+                  <th className="p-4 font-medium">Total équipements</th>
+                  <th className="p-4 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm divide-y divide-slate-50">
+                {resellersList.map((r) => {
+                  const stats = resellerStatsByName.get(r.name) ?? {
+                    total: 0,
+                    inStock: 0,
+                    assigned: 0,
+                    installed: 0
+                  };
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4">
+                        <div className="font-medium text-slate-900">{r.name}</div>
+                        <div className="text-xs text-slate-500">
+                          Stock: <span className="font-medium">{r.name}_Stock</span>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-slate-900 text-sm">{r.email}</div>
+                        <div className="text-slate-500 text-xs">{r.tel}</div>
+                      </td>
+                      <td className="p-4">
+                        <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+                          {stats.total}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <button
+                          onClick={() => openResellerEquipments(r)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                          title="Voir les équipements affectés à ce revendeur"
+                        >
+                          <Eye size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {resellersList.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-slate-500">
+                      Aucun revendeur rattaché à Tunav.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Quotas modal (placeholder write path) */}
+      <Modal
+        isOpen={isQuotasOpen}
+        onClose={() => setIsQuotasOpen(false)}
+        title={`Quotas — ${clientToQuota?.name ?? ''}`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
+            Véhicules autorisés: <strong>{clientToQuota?.vehicleLimit === null ? '∞' : (clientToQuota?.vehicleLimit ?? 0)}</strong>
+          </div>
+          <div className="border border-slate-200 rounded-lg p-3 bg-white">
+            <div className="text-sm font-medium text-slate-900">Équipements autorisés (par type)</div>
+            <div className="mt-3 space-y-2">
+              {Object.keys(quotaEquipmentLimits).length === 0 && (
+                <div className="text-xs text-slate-400 italic">Aucun type pour ce pack.</div>
+              )}
+              {Object.entries(quotaEquipmentLimits).map(([t, v]) => (
+                <div key={t} className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-slate-700">{t}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={v ?? 0}
+                    onChange={(e) =>
+                      setQuotaEquipmentLimits((prev) => ({ ...prev, [t]: Math.max(0, Number(e.target.value)) }))
+                    }
+                    className="w-28 px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                </div>
+              ))}
             </div>
           </div>
-          <div className="h-5 w-px bg-slate-200"></div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wide shrink-0">
-              Client :
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setVehicleFilter('')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${vehicleFilter === '' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
-                
-                Tous
-              </button>
-              <button
-                onClick={() => setVehicleFilter('assigned')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${vehicleFilter === 'assigned' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
-                
-                <User size={12} />
-                Assigné
-              </button>
-              <button
-                onClick={() => setVehicleFilter('not_assigned')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${vehicleFilter === 'not_assigned' ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
-                
-                <XCircle size={12} />
-                Non assigné
-              </button>
-            </div>
+          {quotaError && <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{quotaError}</div>}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              onClick={() => setIsQuotasOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={saveQuotas}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              Enregistrer
+            </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Equipments list modal */}
+      <Modal
+        isOpen={isClientEquipmentsOpen}
+        onClose={() => setIsClientEquipmentsOpen(false)}
+        title={`Équipements — ${clientToView?.name ?? ''}`}
+        size="xl"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-                <th className="p-4 font-medium">N° Série / Type</th>
-                <th className="p-4 font-medium">Revendeur</th>
-                <th className="p-4 font-medium">Client</th>
+                <th className="p-4 font-medium">Type équipement</th>
+                <th className="p-4 font-medium">Matricule</th>
                 <th className="p-4 font-medium">Carte SIM</th>
                 <th className="p-4 font-medium">Statut</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="text-sm divide-y divide-slate-50">
-              {filteredTableEquipments.length > 0 ?
-              filteredTableEquipments.map((eq) =>
-              <tr
-                key={eq.id}
-                className="hover:bg-slate-50 transition-colors">
-                
-                    <td className="p-4">
-                      <div className="font-medium text-slate-900">
-                        {eq.serial}
-                      </div>
-                      <div className="text-slate-500 text-xs">{eq.type}</div>
-                    </td>
-                    <td className="p-4">
-                      <div className="text-slate-600">{eq.reseller}</div>
-                    </td>
-                    <td className="p-4">
-                      <div className="text-slate-700 font-medium">
-                        {eq.client}
-                      </div>
-                    </td>
-                    <td className="p-4 text-slate-600">
-                      <div className="flex items-center gap-1.5">
-                        <Wifi size={14} className="text-slate-400" />
-                        {eq.sim}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${eq.isInstalled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                    
-                        {eq.isInstalled ?
-                    <CheckCircle2 size={12} /> :
-
-                    <XCircle size={12} />
-                    }
-                        {eq.isInstalled ? 'Installé' : 'Non installé'}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
+              {clientEquipments.map((eq) => (
+                <tr key={eq.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="p-4">
+                    <div className="font-medium text-slate-900">{eq.type}</div>
+                    <div className="text-xs text-slate-500">{eq.serial}</div>
+                  </td>
+                  <td className="p-4 text-slate-700">{eq.car}</td>
+                  <td className="p-4 text-slate-700">{eq.sim}</td>
+                  <td className="p-4">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${
+                        eq.isInstalled
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}
+                    >
+                      {eq.isInstalled ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                      {eq.isInstalled ? 'Installé' : 'Non installé'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => openEditEquipment(eq)}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                        title="Modifier"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEquipmentToView(eq);
+                          setShowPositionMap(false);
+                          setIsDetailsModalOpen(true);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                        title="Voir détailler"
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <button
+                        onClick={() => cancelAssignmentToTunavStock(eq.id)}
+                        className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                        title="Annuler l’affectation (retour stock Tunav)"
+                      >
+                        <Undo2 size={16} />
+                      </button>
+                      {!eq.isInstalled && (
                         <button
-                      onClick={() => openAssignModal(eq)}
-                      className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-md transition-colors"
-                      title="Affecter">
-                      
-                          <Link2 size={16} />
+                          onClick={() => openInstallModal(eq)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                          title="Installer équipement"
+                        >
+                          <CheckCircle2 size={16} />
                         </button>
-                        <button
-                      onClick={() => openViewModal(eq)}
-                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                      title="Voir les détails">
-                      
-                          <Eye size={16} />
-                        </button>
-                        <button
-                      onClick={() => openEditModal(eq)}
-                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                      title="Modifier">
-                      
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                      onClick={() => openDeleteModal(eq)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                      title="Supprimer">
-                      
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-              ) :
-
-              <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500">
-                    Aucun équipement trouvé avec ces filtres.
+                      )}
+                    </div>
                   </td>
                 </tr>
-              }
+              ))}
+              {clientEquipments.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-slate-500">
+                    Aucun équipement pour ce client.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-      </section>
+      </Modal>
 
-      {/* --- ADD/EDIT MODAL --- */}
+      {/* Reseller equipments list modal (TUNAV only) */}
       <Modal
-        isOpen={isAddEditModalOpen}
-        onClose={() => setIsAddEditModalOpen(false)}
-        title={
-        selectedEquipment ? "Modifier l'équipement" : 'Ajouter un équipement'
-        }
-        size="lg">
-        
-        <form className="space-y-6">
-          {/* Informations Équipement */}
+        isOpen={isResellerEquipmentsOpen}
+        onClose={() => setIsResellerEquipmentsOpen(false)}
+        title={`Équipements affectés — ${resellerToView?.name ?? ''}`}
+        size="xl"
+      >
+        {resellerToView && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              {(() => {
+                const stats = resellerStatsByName.get(resellerToView.name) ?? {
+                  total: 0,
+                  inStock: 0,
+                  assigned: 0,
+                  installed: 0
+                };
+                return (
+                  <>
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                      <div className="text-[11px] text-blue-700 font-medium uppercase tracking-wide">
+                        En stock revendeur
+                      </div>
+                      <div className="text-xl font-semibold text-blue-700 mt-0.5">{stats.inStock}</div>
+                    </div>
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                      <div className="text-[11px] text-emerald-700 font-medium uppercase tracking-wide">
+                        Affectés à ses clients
+                      </div>
+                      <div className="text-xl font-semibold text-emerald-700 mt-0.5">{stats.assigned}</div>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                      <div className="text-[11px] text-slate-600 font-medium uppercase tracking-wide">Total</div>
+                      <div className="text-xl font-semibold text-slate-900 mt-0.5">{stats.total}</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
+                    <th className="p-3 font-medium">N° série</th>
+                    <th className="p-3 font-medium">Type</th>
+                    <th className="p-3 font-medium">SIM</th>
+                    <th className="p-3 font-medium">Affectation</th>
+                    <th className="p-3 font-medium">Statut</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm divide-y divide-slate-50">
+                  {resellerEquipments.map((eq) => {
+                    const isInResellerStock = eq.client === `${resellerToView.name}_Stock`;
+                    return (
+                      <tr key={eq.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-medium text-slate-900">{eq.serial}</td>
+                        <td className="p-3 text-slate-700">{eq.type}</td>
+                        <td className="p-3 text-slate-600">{eq.sim}</td>
+                        <td className="p-3">
+                          {isInResellerStock ? (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                              <Boxes size={12} /> Stock revendeur
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                              <ArrowLeftRight size={12} /> {eq.client}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium ${
+                              eq.isInstalled
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}
+                          >
+                            {eq.isInstalled ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                            {eq.isInstalled ? 'Installé' : 'Non installé'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {resellerEquipments.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                        Aucun équipement affecté à ce revendeur.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="text-xs text-slate-500 italic">
+              Conformément à votre politique, les clients de ce revendeur ne sont pas listés ici.
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit equipment popup */}
+      <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Modifier l'équipement" size="lg">
+        <div className="space-y-6">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
-              <Cpu size={16} className="text-slate-400" />
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100">
               Informations Équipement
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Type d'équipement
-                </label>
-                <select className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow">
-                  <option>FMB120</option>
-                  <option>FMC130</option>
-                  <option>FMB920</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Numéro de série
-                </label>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série</label>
                 <input
-                  type="text"
-                  defaultValue={selectedEquipment?.serial}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
+                  value={equipmentToEdit?.serial ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, serial: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
               </div>
-              <div className="col-span-1 md:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Statut installation
-                </label>
-                <select
-                  defaultValue={
-                  selectedEquipment?.isInstalled ? 'true' : 'false'
-                  }
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow">
-                  
-                  <option value="true">Installé</option>
-                  <option value="false">Non installé</option>
-                </select>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Carte SIM</label>
+                <input
+                  value={equipmentToEdit?.sim ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, sim: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">N° d'appel puce</label>
+                <input
+                  value={equipmentToEdit?.simCallNumber ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, simCallNumber: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">N° de série puce (ICCID)</label>
+                <input
+                  value={equipmentToEdit?.iccid ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, iccid: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
               </div>
             </div>
           </div>
 
-          {/* Carte SIM */}
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
-              <Wifi size={16} className="text-slate-400" />
-              Carte SIM
-            </h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100">Connexion Serveur</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  N° d'appel puce
-                </label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Serveur</label>
                 <input
-                  type="text"
-                  defaultValue={selectedEquipment?.simCallNumber}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
+                  value={equipmentToEdit?.server ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, server: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  N° de série puce (ICCID)
-                </label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Port</label>
                 <input
-                  type="text"
-                  defaultValue={selectedEquipment?.iccid}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
+                  value={equipmentToEdit?.port ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, port: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
               </div>
             </div>
           </div>
 
-          {/* Connexion Serveur */}
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
-              <ServerIcon size={16} className="text-slate-400" />
-              Connexion Serveur
-            </h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100">Dates</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Serveur
-                </label>
-                <input
-                  type="text"
-                  defaultValue={selectedEquipment?.server}
-                  placeholder="Ex: Srv-Paris-1"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Port
-                </label>
-                <input
-                  type="text"
-                  defaultValue={selectedEquipment?.port}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
-              </div>
-            </div>
-          </div>
-
-          {/* Dates */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
-              <Calendar size={16} className="text-slate-400" />
-              Dates
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Date du premier envoi
-                </label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Date du premier envoi</label>
                 <input
                   type="date"
-                  defaultValue={selectedEquipment?.firstSendDate}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
+                  value={equipmentToEdit?.firstSendDate ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, firstSendDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Date contractuelle adoptée
-                </label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Date contractuelle adoptée</label>
                 <input
                   type="date"
-                  defaultValue={selectedEquipment?.contractDate}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
+                  value={equipmentToEdit?.contractDate ?? ''}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, contractDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
               </div>
             </div>
-          </div>
-
-          <div className="pt-2">
-            <label className="flex items-center gap-2 cursor-pointer"></label>
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
-              type="button"
-              onClick={() => setIsAddEditModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-              
+              onClick={() => setIsEditModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
               Annuler
             </button>
             <button
-              type="button"
-              onClick={() => setIsAddEditModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
-              
+              onClick={saveEditEquipment}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
               Enregistrer
             </button>
           </div>
-        </form>
+        </div>
       </Modal>
 
-      {/* --- VIEW DETAILS MODAL --- */}
+      {/* Install equipment popup */}
       <Modal
-        isOpen={isViewModalOpen}
-        onClose={() => setIsViewModalOpen(false)}
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+        title={`Installer — ${equipmentToInstall?.serial ?? ''}`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Immatriculation (Matricule)</label>
+            <input
+              value={installPlate}
+              onChange={(e) => setInstallPlate(e.target.value)}
+              placeholder="Ex: AB-123-CD"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+          </div>
+          {installError && (
+            <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{installError}</div>
+          )}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              onClick={() => setIsInstallModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={confirmInstall}
+              className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              Installer
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Equipment details popup */}
+      <Modal
+        isOpen={isDetailsModalOpen}
+        onClose={() => {
+          setIsDetailsModalOpen(false);
+          setShowPositionMap(false);
+        }}
         title="Détails de l'équipement"
-        size="lg">
-        
-        {selectedEquipment &&
-        <div className="space-y-6">
-            {/* Header with serial and status */}
+        size="lg"
+      >
+        {equipmentToView ? (
+          <div className="space-y-6">
+            {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600">
                   <Cpu size={20} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    {selectedEquipment.serial}
-                  </h3>
-                  <p className="text-sm text-slate-500">
-                    {selectedEquipment.type}
-                  </p>
+                  <h3 className="text-lg font-semibold text-slate-900">{equipmentToView.serial}</h3>
+                  <p className="text-sm text-slate-500">{equipmentToView.type}</p>
                 </div>
               </div>
               <span
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${selectedEquipment.isInstalled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-              
-                {selectedEquipment.isInstalled ?
-              <CheckCircle2 size={14} /> :
-
-              <XCircle size={14} />
-              }
-                {selectedEquipment.isInstalled ? 'Installé' : 'Non installé'}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
+                  equipmentToView.isInstalled
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                }`}
+              >
+                {equipmentToView.isInstalled ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                {equipmentToView.isInstalled ? 'Installé' : 'Non installé'}
               </span>
             </div>
 
-            {/* Section 1: Détails de l'équipement */}
+            {/* Equipment details */}
             <div>
-              <h4 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
                 <Cpu size={16} className="text-blue-500" />
                 Détails de l'équipement
               </h4>
@@ -882,32 +1047,26 @@ export function EquipmentsPage() {
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <Hash size={14} /> N° de série
                   </div>
-                  <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.serial}
-                  </div>
+                  <div className="text-sm font-medium text-slate-900">{equipmentToView.serial}</div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <Cpu size={14} /> Type
                   </div>
-                  <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.type}
-                  </div>
+                  <div className="text-sm font-medium text-slate-900">{equipmentToView.type}</div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <Wifi size={14} /> N° SIM
                   </div>
-                  <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.sim}
-                  </div>
+                  <div className="text-sm font-medium text-slate-900">{equipmentToView.sim || '-'}</div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <Wifi size={14} /> N° d'appel puce
                   </div>
                   <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.simCallNumber}
+                    {equipmentToView.simCallNumber || '-'}
                   </div>
                 </div>
                 <div className="col-span-2">
@@ -915,35 +1074,29 @@ export function EquipmentsPage() {
                     <Hash size={14} /> ICCID
                   </div>
                   <div className="text-sm font-medium text-slate-900 break-all">
-                    {selectedEquipment.iccid}
+                    {equipmentToView.iccid || '-'}
                   </div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <ServerIcon size={14} /> Serveur
                   </div>
-                  <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.server}
-                  </div>
+                  <div className="text-sm font-medium text-slate-900">{equipmentToView.server || '-'}</div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <Hash size={14} /> Port
                   </div>
-                  <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.port}
-                  </div>
+                  <div className="text-sm font-medium text-slate-900">{equipmentToView.port || '-'}</div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <Calendar size={14} /> Date premier envoi
                   </div>
                   <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.firstSendDate ?
-                  new Date(
-                    selectedEquipment.firstSendDate
-                  ).toLocaleDateString('fr-FR') :
-                  '-'}
+                    {equipmentToView.firstSendDate
+                      ? new Date(equipmentToView.firstSendDate).toLocaleDateString('fr-FR')
+                      : '-'}
                   </div>
                 </div>
                 <div>
@@ -951,323 +1104,406 @@ export function EquipmentsPage() {
                     <Calendar size={14} /> Date contractuelle
                   </div>
                   <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.contractDate ?
-                  new Date(
-                    selectedEquipment.contractDate
-                  ).toLocaleDateString('fr-FR') :
-                  '-'}
+                    {equipmentToView.contractDate
+                      ? new Date(equipmentToView.contractDate).toLocaleDateString('fr-FR')
+                      : '-'}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Section 2: Détails du Client */}
+            {/* Client details */}
             <div>
-              <h4 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
-                <User size={16} className="text-indigo-500" />
+              <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <UserIcon size={16} className="text-blue-500" />
                 Détails du Client
               </h4>
               <div className="grid grid-cols-2 gap-y-5 gap-x-4">
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
-                    <User size={14} /> Client
+                    <UserIcon size={14} /> Client
+                  </div>
+                  <div className="text-sm font-medium text-slate-900">{equipmentToView.client || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
+                    <Store size={14} /> Revendeur
                   </div>
                   <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.client}
+                    {equipmentToView.reseller || '-'}
                   </div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
-                    <Building2 size={14} /> Revendeur
+                    <CarIcon size={14} /> Véhicule
                   </div>
-                  <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.reseller}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
-                    <Car size={14} /> Véhicule
-                  </div>
-                  <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.car !== 'Unassigned' ?
-                  selectedEquipment.car :
-
-                  <span className="text-slate-400 italic">Non assigné</span>
-                  }
-                  </div>
+                  <div className="text-sm font-medium text-slate-900">{equipmentToView.car || '-'}</div>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
                     <CheckCircle2 size={14} /> Statut installation
                   </div>
                   <div className="text-sm font-medium text-slate-900">
-                    {selectedEquipment.isInstalled ?
-                  'Installé' :
-                  'Non installé'}
+                    {equipmentToView.isInstalled ? 'Installé' : 'Non installé'}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Position Map */}
-            {showPositionMap && selectedEquipment.lastPosition &&
-          <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden h-[250px] relative z-0">
-                <MapContainer
-              center={[
-              selectedEquipment.lastPosition.latitude,
-              selectedEquipment.lastPosition.longitude]
-              }
-              zoom={13}
-              scrollWheelZoom={false}
-              style={{
-                height: '100%',
-                width: '100%'
-              }}>
-              
-                  <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              
-                  <Marker
-                position={[
-                selectedEquipment.lastPosition.latitude,
-                selectedEquipment.lastPosition.longitude]
-                }
-                icon={customMarkerIcon}>
-                
-                    <Popup>
-                      <div className="text-xs leading-relaxed">
-                        <strong>Dernière position:</strong>
-                        <br />
-                        Date Local={selectedEquipment.lastPosition.dateLocal}
-                        <br />
-                        Vitesse= {selectedEquipment.lastPosition.vitesse}km/h
-                        <br />
-                        État={' '}
-                        <span
-                      style={{
-                        color:
-                        selectedEquipment.lastPosition.etat ===
-                        'Connectée' ?
-                        '#16a34a' :
-                        '#dc2626'
-                      }}>
-                      
-                          {selectedEquipment.lastPosition.etat}
-                        </span>
-                        <br />
-                        Niveau de carburant=
-                        {selectedEquipment.lastPosition.niveauCarburant}%<br />
-                        Total de carburant=
-                        {selectedEquipment.lastPosition.totalCarburant}
-                        <br />
-                        RPM={selectedEquipment.lastPosition.rpm}
-                        <br />
-                        Température Moteur=
-                        {selectedEquipment.lastPosition.temperatureMoteur}°C
-                        <br />
-                        Kilométrage={selectedEquipment.lastPosition.kilometrage}
-                        km
+            {/* Map + Position details */}
+            {showPositionMap && (() => {
+              const lp = equipmentToView.lastPosition ?? DEFAULT_POSITION;
+              const isConnected = lp.etat === 'Connectée';
+              return (
+                <>
+                  <div className="border border-slate-200 rounded-lg overflow-hidden h-[250px] relative z-0">
+                    <MapContainer
+                      center={[lp.latitude, lp.longitude]}
+                      zoom={13}
+                      scrollWheelZoom={false}
+                      style={{ height: '100%', width: '100%' }}
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <Marker position={[lp.latitude, lp.longitude]} icon={customMarkerIcon}>
+                        <Popup>
+                          <div className="text-xs leading-relaxed">
+                            <strong>Dernière position:</strong>
+                            <br />
+                            Date Local={lp.dateLocal}
+                            <br />
+                            Vitesse= {lp.vitesse}km/h
+                            <br />
+                            État={' '}
+                            <span style={{ color: isConnected ? '#16a34a' : '#dc2626' }}>{lp.etat}</span>
+                            <br />
+                            Niveau de carburant={lp.niveauCarburant}%
+                            <br />
+                            Total de carburant={lp.totalCarburant}
+                            <br />
+                            RPM={lp.rpm}
+                            <br />
+                            Température Moteur={lp.temperatureMoteur}°C
+                            <br />
+                            Kilométrage={lp.kilometrage}km
+                          </div>
+                        </Popup>
+                      </Marker>
+                    </MapContainer>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-200 flex items-center gap-2">
+                      <Navigation size={16} className="text-blue-500" />
+                      Dernière position
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-4">
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Calendar size={12} /> Date Local
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.dateLocal}</div>
                       </div>
-                    </Popup>
-                  </Marker>
-                </MapContainer>
-              </div>
-          }
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <MapPin size={12} /> Latitude
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.latitude}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <MapPin size={12} /> Longitude
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.longitude}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Gauge size={12} /> Vitesse
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.vitesse} km/h</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Activity size={12} /> État
+                        </div>
+                        <div
+                          className={`text-sm font-semibold flex items-center gap-1.5 ${
+                            isConnected ? 'text-emerald-600' : 'text-red-600'
+                          }`}
+                        >
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              isConnected ? 'bg-emerald-500' : 'bg-red-500'
+                            }`}
+                          />
+                          {lp.etat}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Fuel size={12} /> Niveau de carburant
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.niveauCarburant}%</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Fuel size={12} /> Total de carburant
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.totalCarburant}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Activity size={12} /> RPM
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.rpm}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Thermometer size={12} /> Température Moteur
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{lp.temperatureMoteur}°C</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
+                          <Navigation size={12} /> Kilométrage
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">
+                          {lp.kilometrage.toLocaleString('fr-FR')} km
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
-            {/* Position Details Info */}
-            {showPositionMap && selectedEquipment.lastPosition &&
-          <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <h4 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-200 flex items-center gap-2">
-                  <Navigation size={16} className="text-blue-500" />
-                  Dernière position
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-4">
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Calendar size={12} /> Date Local
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.dateLocal}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <MapPin size={12} /> Latitude
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.latitude}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <MapPin size={12} /> Longitude
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.longitude}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Gauge size={12} /> Vitesse
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.vitesse} km/h
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Activity size={12} /> État
-                    </div>
-                    <div
-                  className={`text-sm font-semibold flex items-center gap-1.5 ${selectedEquipment.lastPosition.etat === 'Connectée' ? 'text-emerald-600' : 'text-red-600'}`}>
-                  
-                      <span
-                    className={`w-2 h-2 rounded-full ${selectedEquipment.lastPosition.etat === 'Connectée' ? 'bg-emerald-500' : 'bg-red-500'}`}>
-                  </span>
-                      {selectedEquipment.lastPosition.etat}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Fuel size={12} /> Niveau de carburant
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.niveauCarburant}%
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Fuel size={12} /> Total de carburant
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.totalCarburant}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Activity size={12} /> RPM
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.rpm}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Thermometer size={12} /> Température Moteur
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.temperatureMoteur}°C
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-slate-500 mb-0.5 flex items-center gap-1">
-                      <Navigation size={12} /> Kilométrage
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {selectedEquipment.lastPosition.kilometrage.toLocaleString(
-                    'fr-FR'
-                  )}{' '}
-                      km
-                    </div>
-                  </div>
-                </div>
-              </div>
-          }
-
+            {/* Footer actions */}
             <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-              {selectedEquipment.lastPosition &&
-            <button
-              onClick={() => setShowPositionMap(!showPositionMap)}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${showPositionMap ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}>
-              
-                  <MapPin size={16} />
-                  {showPositionMap ? 'Masquer la position' : 'Voir position'}
-                </button>
-            }
               <button
-              onClick={() => setIsViewModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-              
+                onClick={() => setShowPositionMap(!showPositionMap)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
+                  showPositionMap
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <MapPin size={16} />
+                {showPositionMap ? 'Masquer la position' : 'Voir position'}
+              </button>
+              <button
+                onClick={() => {
+                  setIsDetailsModalOpen(false);
+                  setShowPositionMap(false);
+                }}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
                 Fermer
               </button>
             </div>
           </div>
-        }
+        ) : (
+          <div className="text-sm text-slate-500">—</div>
+        )}
       </Modal>
 
-      {/* --- DELETE CONFIRMATION MODAL --- */}
-      <Modal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        title="Supprimer l'équipement"
-        size="md">
-        
-        <div className="space-y-6">
-          <div className="bg-red-50 text-red-800 p-4 rounded-lg text-sm">
-            Êtes-vous sûr de vouloir supprimer cet équipement{' '}
-            <strong>{selectedEquipment?.serial}</strong> ? Cette action est
-            irréversible.
+      {/* Assign stock to client */}
+      <Modal isOpen={isAssignClientOpen} onClose={() => setIsAssignClientOpen(false)} title="Affectation Clients" size="md">
+        <div className="space-y-4">
+          <div className="text-sm text-slate-700">
+            Équipement: <strong>{stockToAssign?.serial}</strong>
           </div>
-          <div className="flex justify-end gap-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
+            <select
+              value={assignClientName}
+              onChange={(e) => setAssignClientName(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            >
+              <option value="">Sélectionner…</option>
+              {clients
+                .filter((c) => !c.name.endsWith('_Stock'))
+                .filter((c) => c.name !== 'Tunav')
+                .filter((c) => c.type !== 'Revendeur')
+                .filter((c) => c.reseller === currentUserName)
+                .map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          {assignError && <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{assignError}</div>}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
-              onClick={() => setIsDeleteModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-              
+              onClick={() => setIsAssignClientOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
               Annuler
             </button>
             <button
-              onClick={() => setIsDeleteModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors shadow-sm">
-              
-              Supprimer
+              onClick={confirmAssignToClient}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              disabled={!assignClientName}
+            >
+              Confirmer
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* --- ASSIGNMENT MODAL --- */}
+      {/* Assign stock to reseller */}
       <Modal
-        isOpen={isAssignModalOpen}
-        onClose={() => setIsAssignModalOpen(false)}
-        title={`Affecter - ${equipmentToAssign?.serial}`}
-        size="md">
-        
-        <div className="space-y-5">
-          <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-3">
-            <Link2 className="shrink-0 mt-0.5" size={16} />
-            <p>
-              Choisissez une ligne : <strong>client · revendeur</strong>, ou une
-              entrée <strong>revendeur et client</strong> lorsque c’est la même
-              structure.
-            </p>
+        isOpen={isAssignResellerOpen}
+        onClose={() => setIsAssignResellerOpen(false)}
+        title="Affectation Revendeur"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="text-sm text-slate-700">
+            Équipement: <strong>{stockToAssign?.serial}</strong>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Revendeur</label>
+            <select
+              value={assignResellerName}
+              onChange={(e) => setAssignResellerName(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            >
+              <option value="">Sélectionner…</option>
+              {clients
+                .filter((c) => c.type === 'Revendeur')
+                .map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              onClick={() => setIsAssignResellerOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={confirmAssignToReseller}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              disabled={!assignResellerName}
+            >
+              Confirmer
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add stock equipment */}
+      <Modal isOpen={isAddStockOpen} onClose={() => setIsAddStockOpen(false)} title="Stock équipements" size="lg">
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100">
+              Informations Équipement
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série</label>
+                <input
+                  value={newStock.serial}
+                  onChange={(e) => setNewStock((p) => ({ ...p, serial: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Carte SIM</label>
+                <input
+                  value={newStock.sim}
+                  onChange={(e) => setNewStock((p) => ({ ...p, sim: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">N° d'appel puce</label>
+                <input
+                  value={newStock.simCallNumber}
+                  onChange={(e) => setNewStock((p) => ({ ...p, simCallNumber: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">N° de série puce (ICCID)</label>
+                <input
+                  value={newStock.iccid}
+                  onChange={(e) => setNewStock((p) => ({ ...p, iccid: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+            </div>
           </div>
 
-          <SearchableSelect
-            value={assignParty}
-            onChange={setAssignParty}
-            options={assignPartyLabels}
-            placeholder="-- Revendeur / client --"
-            label="Revendeur / client"
-            icon={<Building2 size={14} />}
-          />
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100">Connexion Serveur</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Serveur</label>
+                <input
+                  value={newStock.server}
+                  onChange={(e) => setNewStock((p) => ({ ...p, server: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Port</label>
+                <input
+                  value={newStock.port}
+                  onChange={(e) => setNewStock((p) => ({ ...p, port: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100">Dates</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Date du premier envoi</label>
+                <input
+                  type="date"
+                  value={newStock.firstSendDate}
+                  onChange={(e) => setNewStock((p) => ({ ...p, firstSendDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Date contractuelle adoptée</label>
+                <input
+                  type="date"
+                  value={newStock.contractDate}
+                  onChange={(e) => setNewStock((p) => ({ ...p, contractDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+            </div>
+          </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
-              onClick={() => setIsAssignModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-              
+              onClick={() => setIsAddStockOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
               Annuler
             </button>
             <button
-              onClick={handleAssign}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
-              
-              Confirmer l'affectation
+              onClick={confirmAddStock}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              Ajouter
             </button>
           </div>
         </div>
       </Modal>
-    </div>);
-
+    </div>
+  );
 }
