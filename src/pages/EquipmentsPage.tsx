@@ -93,6 +93,19 @@ export function EquipmentsPage() {
   const [installPlate, setInstallPlate] = useState<string>('');
   const [installError, setInstallError] = useState<string | null>(null);
 
+  const vehiclePlateSuggestions = useMemo(() => {
+    const clientName = equipmentToInstall?.client;
+    if (!clientName) return [];
+    const plates = new Set<string>();
+    for (const e of equipments) {
+      if (e.client !== clientName) continue;
+      const plate = typeof e.car === 'string' ? e.car.trim() : '';
+      if (!plate || plate === 'Unassigned') continue;
+      plates.add(plate);
+    }
+    return Array.from(plates).sort((a, b) => a.localeCompare(b));
+  }, [equipments, equipmentToInstall]);
+
   const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
   const [stockToAssign, setStockToAssign] = useState<any | null>(null);
   const [assignClientName, setAssignClientName] = useState<string>('');
@@ -1124,9 +1137,18 @@ export function EquipmentsPage() {
             <input
               value={installPlate}
               onChange={(e) => setInstallPlate(e.target.value)}
+              list="vehicle-plates"
               placeholder="Ex: AB-123-CD"
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
+            <datalist id="vehicle-plates">
+              {vehiclePlateSuggestions.map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
+            <div className="mt-1 text-xs text-slate-500">
+              Recherchez dans la liste ou saisissez une nouvelle matricule si elle n’existe pas.
+            </div>
           </div>
           {installError && (
             <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{installError}</div>
