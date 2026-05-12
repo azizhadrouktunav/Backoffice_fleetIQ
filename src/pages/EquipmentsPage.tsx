@@ -147,7 +147,7 @@ export function EquipmentsPage() {
   );
 
   const [isQuotasOpen, setIsQuotasOpen] = useState(false);
-  const [clientToQuota, setClientToQuota] = useState<(typeof clients)[number] | null>(null);
+  const [clientToQuota] = useState<(typeof clients)[number] | null>(null);
   const [quotaEquipmentLimits, setQuotaEquipmentLimits] = useState<Record<string, number>>({});
   const [quotaError, setQuotaError] = useState<string | null>(null);
 
@@ -210,18 +210,6 @@ export function EquipmentsPage() {
   const openResellerEquipments = (r: (typeof clients)[number]) => {
     setResellerToView(r);
     setIsResellerEquipmentsOpen(true);
-  };
-
-  const openQuotas = (c: (typeof clients)[number]) => {
-    const a = c.packs[0];
-    const pack = a ? packById.get(a.packId) : undefined;
-    const supported = pack?.supportedEquipments ?? [];
-    const base: Record<string, number> = {};
-    for (const t of supported) base[t] = a?.equipmentLimits?.[t] ?? 0;
-    setClientToQuota(c);
-    setQuotaEquipmentLimits(base);
-    setQuotaError(null);
-    setIsQuotasOpen(true);
   };
 
   const saveQuotas = () => {
@@ -544,15 +532,6 @@ export function EquipmentsPage() {
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            {c.vehicleLimit !== null && (
-                              <button
-                                onClick={() => openQuotas(c)}
-                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-                                title="Quotas"
-                              >
-                                <Settings size={16} />
-                              </button>
-                            )}
                             <button
                               onClick={() => openClientEquipments(c)}
                               className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"

@@ -1034,15 +1034,6 @@ export function SubscriptionsPage() {
                           >
                             <Edit2 size={16} />
                           </button>
-                          {client.packs[0] && client.vehicleLimit !== null && (
-                            <button
-                              onClick={() => openQuotasModal(client)}
-                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-                              title="Quotas (équipements à installer)"
-                            >
-                              <Settings size={16} />
-                            </button>
-                          )}
                           <button
                             onClick={() => openPaymentModal(client)}
                             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
