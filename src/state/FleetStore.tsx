@@ -49,6 +49,12 @@ export type FleetClient = {
 export type FleetEquipment = {
   id: number;
   serial: string;
+  /** Type d’équipement métier (ETX, MiniTrace, ...) */
+  equipmentType?: EquipmentType;
+  /** Support bus CAN */
+  supportsCan?: boolean;
+  /** Pack affecté à l’équipement (1 équipement = 1 pack) */
+  packId?: number;
   type: string;
   sim: string;
   simCallNumber: string;

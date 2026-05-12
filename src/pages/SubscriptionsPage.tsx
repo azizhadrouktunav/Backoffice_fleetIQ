@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   CreditCard,
   Ban,
-  SlidersHorizontal,
   Settings
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
@@ -541,7 +540,7 @@ export function SubscriptionsPage() {
   // --- Assign pack to client modal ---
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [clientToAssign, setClientToAssign] = useState<ClientWithPack | null>(null);
-  const [selectedPackId, setSelectedPackId] = useState<number | null>(null);
+  const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
 
   // --- Quotas modal (per client) ---
   const [isQuotasModalOpen, setIsQuotasModalOpen] = useState(false);
@@ -549,11 +548,6 @@ export function SubscriptionsPage() {
   const [quotaVehicleLimit, setQuotaVehicleLimit] = useState<number>(0);
   const [quotaEquipmentLimits, setQuotaEquipmentLimits] = useState<Partial<Record<EquipmentType, number>>>({});
   const [quotaError, setQuotaError] = useState<string | null>(null);
-
-  // --- Customize features modal (per client) ---
-  const [isCustomizeModalOpen, setIsCustomizeModalOpen] = useState(false);
-  const [clientToCustomize, setClientToCustomize] = useState<ClientWithPack | null>(null);
-  const [customSelectedFeatures, setCustomSelectedFeatures] = useState<Set<string>>(new Set());
 
   // --- Payment modal ---
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -590,7 +584,16 @@ export function SubscriptionsPage() {
 
   const filteredPacks = useMemo(() => {
     const q = packSearch.trim().toLowerCase();
-    const base = packs.filter((p) => fixedPackNames.includes(p.name as any));
+    const order = new Map<string, number>([
+      ['FleetIQ Secure', 0],
+      ['FleetIQ Pro', 1],
+      ['FleetIQ Mechanic', 2],
+      ['FleetIQ Vision', 3]
+    ]);
+    const base = packs
+      .filter((p) => fixedPackNames.includes(p.name as any))
+      .slice()
+      .sort((a, b) => (order.get(a.name) ?? 999) - (order.get(b.name) ?? 999));
     if (!q) return base;
     return base.filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
   }, [packSearch, packs, fixedPackNames]);
@@ -665,7 +668,7 @@ export function SubscriptionsPage() {
 
   const openAssignModal = (client: ClientWithPack) => {
     setClientToAssign(client);
-    setSelectedPackId(client.packs[0]?.packId ?? null);
+    setSelectedPackIds(new Set(client.packs.map((a) => a.packId)));
     setIsAssignModalOpen(true);
   };
 
@@ -686,17 +689,6 @@ export function SubscriptionsPage() {
     setIsQuotasModalOpen(true);
   };
 
-  const openCustomizeFeaturesModal = (client: ClientWithPack) => {
-    const assignment = client.packs[0];
-    const pack = assignment ? packById.get(assignment.packId) : undefined;
-    const base = assignment?.customFeatures ?? pack?.features ?? [];
-    setClientToCustomize(client);
-    setCustomSelectedFeatures(new Set(base));
-    setFeatureSearch('');
-    setExpandedNodes(new Set(['module:suivie', 'module:parc']));
-    setIsCustomizeModalOpen(true);
-  };
-
   const openPaymentModal = (client: ClientWithPack) => {
     setClientForPayment(client);
     setNewExpiry(client.expiry);
@@ -705,22 +697,32 @@ export function SubscriptionsPage() {
 
   const handleAssignPack = () => {
     if (!clientToAssign) return;
-    const pack = selectedPackId != null ? packById.get(selectedPackId) : undefined;
-    const nextAssignment: ClientPackAssignment[] =
-      pack && selectedPackId != null
-        ? [
-            {
-              packId: selectedPackId,
+    const selected = Array.from(selectedPackIds);
+    setClients((prev) =>
+      prev.map((c) => {
+        if (c.id !== clientToAssign.id) return c;
+
+        const byPackId = new Map(c.packs.map((a) => [a.packId, a]));
+        const nextAssignments: ClientPackAssignment[] = selected
+          .map((packId) => {
+            const existing = byPackId.get(packId);
+            if (existing) return existing;
+            const pack = packById.get(packId);
+            if (!pack) return null;
+            return {
+              packId,
               vehicleLimit: pack.vehicleLimit,
               equipmentLimits: pack.supportedEquipments.reduce<Partial<Record<EquipmentType, number>>>((acc, t) => {
                 acc[t] = 0;
                 return acc;
               }, {})
-            }
-          ]
-        : [];
+            } satisfies ClientPackAssignment;
+          })
+          .filter(Boolean) as ClientPackAssignment[];
 
-    setClients((prev) => prev.map((c) => (c.id === clientToAssign.id ? { ...c, packs: nextAssignment } : c)));
+        return { ...c, packs: nextAssignments };
+      })
+    );
     setIsAssignModalOpen(false);
   };
 
@@ -982,8 +984,10 @@ export function SubscriptionsPage() {
               </thead>
               <tbody className="text-sm divide-y divide-slate-50">
                 {filteredClients.map((client) => {
-                  const assignment = client.packs[0];
-                  const pack = assignment ? packById.get(assignment.packId) : undefined;
+                  const assignments = client.packs;
+                  const packsForClient = assignments
+                    .map((a) => packById.get(a.packId))
+                    .filter(Boolean) as Pack[];
                   return (
                     <tr key={client.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-4">
@@ -991,16 +995,16 @@ export function SubscriptionsPage() {
                         <div className="text-slate-500 text-xs">{client.email}</div>
                       </td>
                       <td className="p-4">
-                        {pack ? (
+                        {packsForClient.length > 0 ? (
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${COLOR_STYLES[pack.color].badge}`}>
-                              {pack.name}
-                            </span>
-                            {assignment?.customFeatures && (
-                              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                                Personnalisé
+                            {packsForClient.map((p) => (
+                              <span
+                                key={p.id}
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium ${COLOR_STYLES[p.color].badge}`}
+                              >
+                                {p.name}
                               </span>
-                            )}
+                            ))}
                           </div>
                         ) : (
                           <span className="text-slate-400 italic text-xs">Non affecté</span>
@@ -1026,17 +1030,9 @@ export function SubscriptionsPage() {
                           <button
                             onClick={() => openAssignModal(client)}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                            title="Affecter un pack"
+                            title="Affecter des packs"
                           >
                             <Edit2 size={16} />
-                          </button>
-                          <button
-                            onClick={() => openCustomizeFeaturesModal(client)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                            title="Personnaliser les fonctionnalités (pack personnalisé)"
-                            disabled={!client.packs[0]}
-                          >
-                            <SlidersHorizontal size={16} />
                           </button>
                           {client.packs[0] && client.vehicleLimit !== null && (
                             <button
@@ -1371,7 +1367,7 @@ export function SubscriptionsPage() {
           <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-3">
             <Package className="shrink-0 mt-0.5" size={16} />
             <p>
-              Sélectionnez un pack à affecter au client <strong>{clientToAssign?.name}</strong>.
+              Sélectionnez un ou plusieurs packs à affecter au client <strong>{clientToAssign?.name}</strong>.
             </p>
           </div>
 
@@ -1379,7 +1375,7 @@ export function SubscriptionsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-2">Pack</label>
             <div className="space-y-2">
               {filteredPacks.map((pack) => {
-                const isSelected = selectedPackId === pack.id;
+                const isSelected = selectedPackIds.has(pack.id);
                 return (
                   <label
                     key={pack.id}
@@ -1390,10 +1386,16 @@ export function SubscriptionsPage() {
                     }`}
                   >
                     <input
-                      type="radio"
-                      name="pack"
+                      type="checkbox"
                       checked={isSelected}
-                      onChange={() => setSelectedPackId(pack.id)}
+                      onChange={() =>
+                        setSelectedPackIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(pack.id)) next.delete(pack.id);
+                          else next.add(pack.id);
+                          return next;
+                        })
+                      }
                       className="mt-1 text-blue-600 focus:ring-blue-500 border-slate-300"
                     />
                     <div className="min-w-0 flex-1">
@@ -1414,7 +1416,7 @@ export function SubscriptionsPage() {
                 <span className="text-sm text-slate-600">Aucun pack</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedPackId(null)}
+                  onClick={() => setSelectedPackIds(new Set())}
                   className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
                   Retirer
@@ -1543,170 +1545,6 @@ export function SubscriptionsPage() {
         </div>
       </Modal>
 
-      {/* --- CUSTOMIZE FEATURES MODAL --- */}
-      <Modal
-        isOpen={isCustomizeModalOpen}
-        onClose={() => setIsCustomizeModalOpen(false)}
-        title={`Fonctionnalités — ${clientToCustomize?.name ?? ''}`}
-        size="xl"
-      >
-        <div className="space-y-4">
-          <div className="bg-indigo-50 text-indigo-900 p-3 rounded-lg text-sm">
-            Sélectionnez/désélectionnez des fonctionnalités pour rendre ce client <strong>“Pack personnalisé”</strong>.
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="Rechercher une fonctionnalité…"
-                value={featureSearch}
-                onChange={(e) => setFeatureSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-shadow"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => setExpandedNodes(new Set(FEATURE_CATALOG.map((m) => m.id)))}
-              className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              Déplier
-            </button>
-            <button
-              type="button"
-              onClick={() => setExpandedNodes(new Set())}
-              className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              Réduire
-            </button>
-          </div>
-
-          <div className="border border-slate-200 rounded-lg max-h-[55vh] overflow-auto">
-            <div className="p-2">
-              {(() => {
-                // version locale du tree, basée sur customSelectedFeatures
-                const renderTree = (nodes: FeatureNode[], depth = 0): React.ReactNode[] => {
-                  return nodes
-                    .filter((n) => (featureSearch.trim() ? doesNodeMatch(n) : true))
-                    .map((node) => {
-                      const isLeaf = !node.children || node.children.length === 0;
-                      const expanded = expandedNodes.has(node.id);
-                      const pad = depth * 12;
-
-                      if (isLeaf) {
-                        const checked = customSelectedFeatures.has(node.id);
-                        return (
-                          <label
-                            key={node.id}
-                            className="flex items-start gap-3 py-2 px-2 rounded-md hover:bg-slate-50 cursor-pointer"
-                            style={{ paddingLeft: 12 + pad }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => {
-                                setCustomSelectedFeatures((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(node.id)) next.delete(node.id);
-                                  else next.add(node.id);
-                                  return next;
-                                });
-                              }}
-                              className="mt-0.5 h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <span className="text-sm text-slate-700">{node.label}</span>
-                          </label>
-                        );
-                      }
-
-                      const { selected, total } = countSelectedLeaves(node, customSelectedFeatures);
-                      const isAllSelected = total > 0 && selected === total;
-                      const isPartiallySelected = selected > 0 && selected < total;
-
-                      return (
-                        <div key={node.id} className="rounded-md">
-                          <div
-                            className="flex items-center gap-2 py-2 px-2 rounded-md hover:bg-slate-50"
-                            style={{ paddingLeft: 8 + pad }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleNodeExpanded(node.id)}
-                              className="p-1 rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-500"
-                              aria-label={expanded ? 'Réduire' : 'Déplier'}
-                            >
-                              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCustomSelectedFeatures(toggleAllLeaves(node, customSelectedFeatures, !isAllSelected))}
-                              className={`h-4 w-4 rounded border flex items-center justify-center ${
-                                isAllSelected
-                                  ? 'bg-indigo-600 border-indigo-600 text-white'
-                                  : isPartiallySelected
-                                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                    : 'bg-white border-slate-300 text-slate-600'
-                              }`}
-                              title="Sélectionner/désélectionner tout"
-                            >
-                              {(isAllSelected || isPartiallySelected) && <Check size={12} />}
-                            </button>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-sm text-slate-900 truncate">{node.label}</span>
-                                <span className="text-[11px] text-slate-500">
-                                  {selected}/{total}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          {expanded && node.children && <div className="pl-2">{renderTree(node.children, depth + 1)}</div>}
-                        </div>
-                      );
-                    });
-                };
-
-                return renderTree(FEATURE_CATALOG);
-              })()}
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <button
-              onClick={() => setIsCustomizeModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={() => {
-                if (!clientToCustomize) return;
-                setClients((prev) =>
-                  prev.map((c) => {
-                    if (c.id !== clientToCustomize.id) return c;
-                    const a = c.packs[0];
-                    if (!a) return c;
-                    return {
-                      ...c,
-                      packs: [
-                        {
-                          ...a,
-                          customFeatures: Array.from(customSelectedFeatures)
-                        }
-                      ]
-                    };
-                  })
-                );
-                setIsCustomizeModalOpen(false);
-              }}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-            >
-              Enregistrer
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

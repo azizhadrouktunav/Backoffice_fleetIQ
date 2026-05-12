@@ -25,7 +25,7 @@ import {
   Car as CarIcon
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
-import { useFleetStore } from '../state/FleetStore';
+import { EquipmentType, useFleetStore } from '../state/FleetStore';
 import {
   MapContainer as MapContainerBase,
   TileLayer as TileLayerBase,
@@ -80,6 +80,10 @@ export function EquipmentsPage() {
   const [equipmentToEdit, setEquipmentToEdit] = useState<any | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
+  const [isEditPackModalOpen, setIsEditPackModalOpen] = useState(false);
+  const [equipmentToEditPack, setEquipmentToEditPack] = useState<any | null>(null);
+  const [selectedEquipmentPackId, setSelectedEquipmentPackId] = useState<number | null>(null);
+
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [equipmentToView, setEquipmentToView] = useState<any | null>(null);
   const [showPositionMap, setShowPositionMap] = useState(false);
@@ -107,8 +111,27 @@ export function EquipmentsPage() {
     port: '',
     firstSendDate: '',
     contractDate: '',
-    type: 'FMC130'
+    type: 'FMC130',
+    equipmentType: 'ETX' as EquipmentType,
+    supportsCan: false
   });
+
+  const equipmentTypes = useMemo(
+    () =>
+      [
+        'ETX',
+        'MiniTrace',
+        'MedWatch',
+        'ETBLE',
+        'ET8',
+        'ET6',
+        'EasyCAN',
+        'ET8+CAN',
+        'ET6+CAN',
+        'Dashcam'
+      ] as EquipmentType[],
+    []
+  );
 
   const [isQuotasOpen, setIsQuotasOpen] = useState(false);
   const [clientToQuota, setClientToQuota] = useState<(typeof clients)[number] | null>(null);
@@ -280,6 +303,24 @@ export function EquipmentsPage() {
     setIsEditModalOpen(false);
   };
 
+  const openEditEquipmentPack = (eq: any) => {
+    if (!clientToView) return;
+    const client = clients.find((c) => c.name === clientToView.name);
+    if (!client || !client.packs || client.packs.length === 0) return;
+    setEquipmentToEditPack(eq);
+    setSelectedEquipmentPackId(typeof eq.packId === 'number' ? eq.packId : client.packs[0].packId);
+    setIsEditPackModalOpen(true);
+  };
+
+  const saveEquipmentPack = () => {
+    if (!equipmentToEditPack) return;
+    if (selectedEquipmentPackId == null) return;
+    setEquipments((prev) =>
+      prev.map((e) => (e.id === equipmentToEditPack.id ? { ...e, packId: selectedEquipmentPackId } : e))
+    );
+    setIsEditPackModalOpen(false);
+  };
+
   const openAssignToClient = (eq: any) => {
     setStockToAssign(eq);
     setAssignClientName('');
@@ -300,7 +341,13 @@ export function EquipmentsPage() {
     setEquipments((prev) =>
       prev.map((e) =>
         e.id === stockToAssign.id
-          ? { ...e, client: c.name, reseller: c.reseller, car: 'Unassigned' }
+          ? {
+              ...e,
+              client: c.name,
+              reseller: c.reseller,
+              car: 'Unassigned',
+              packId: e.packId ?? c.packs?.[0]?.packId
+            }
           : e
       )
     );
@@ -339,7 +386,9 @@ export function EquipmentsPage() {
       port: '',
       firstSendDate: '',
       contractDate: '',
-      type: 'FMC130'
+      type: 'FMC130',
+      equipmentType: 'ETX',
+      supportsCan: false
     });
     setIsAddStockOpen(true);
   };
@@ -352,6 +401,9 @@ export function EquipmentsPage() {
       {
         id: nextId,
         serial,
+        equipmentType: newStock.equipmentType,
+        supportsCan: newStock.supportsCan,
+        packId: undefined,
         type: newStock.type,
         sim: newStock.sim.trim(),
         simCallNumber: newStock.simCallNumber.trim(),
@@ -676,6 +728,7 @@ export function EquipmentsPage() {
             <thead>
               <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
                 <th className="p-4 font-medium">Type équipement</th>
+                <th className="p-4 font-medium">Pack</th>
                 <th className="p-4 font-medium">Matricule</th>
                 <th className="p-4 font-medium">Carte SIM</th>
                 <th className="p-4 font-medium">Statut</th>
@@ -688,6 +741,18 @@ export function EquipmentsPage() {
                   <td className="p-4">
                     <div className="font-medium text-slate-900">{eq.type}</div>
                     <div className="text-xs text-slate-500">{eq.serial}</div>
+                  </td>
+                  <td className="p-4">
+                    {(() => {
+                      const pack = typeof eq.packId === 'number' ? packById.get(eq.packId) : undefined;
+                      return pack ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+                          {pack.name}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">—</span>
+                      );
+                    })()}
                   </td>
                   <td className="p-4 text-slate-700">{eq.car}</td>
                   <td className="p-4 text-slate-700">{eq.sim}</td>
@@ -711,6 +776,14 @@ export function EquipmentsPage() {
                         title="Modifier"
                       >
                         <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => openEditEquipmentPack(eq)}
+                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                        title="Modifier le pack sélectionné"
+                        disabled={!clientToView || (clientToView?.packs?.length ?? 0) === 0}
+                      >
+                        <Settings size={16} />
                       </button>
                       <button
                         onClick={() => {
@@ -745,13 +818,61 @@ export function EquipmentsPage() {
               ))}
               {clientEquipments.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500">
+                  <td colSpan={6} className="p-8 text-center text-slate-500">
                     Aucun équipement pour ce client.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+      </Modal>
+
+      {/* Edit pack selection for equipment */}
+      <Modal
+        isOpen={isEditPackModalOpen}
+        onClose={() => setIsEditPackModalOpen(false)}
+        title={`Pack — ${equipmentToEditPack?.serial ?? ''}`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="text-sm text-slate-700">
+            Choisissez le pack de cet équipement. Un équipement appartient à <strong>un seul</strong> pack.
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Pack</label>
+            <select
+              value={selectedEquipmentPackId ?? ''}
+              onChange={(e) => setSelectedEquipmentPackId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            >
+              <option value="">Sélectionner…</option>
+              {['FleetIQ Secure', 'FleetIQ Pro', 'FleetIQ Mechanic', 'FleetIQ Vision'].map((packName) => {
+                const p = packs.find((x) => x.name === packName);
+                if (!p) return null;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              onClick={() => setIsEditPackModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={saveEquipmentPack}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              disabled={selectedEquipmentPackId == null}
+            >
+              Enregistrer
+            </button>
+          </div>
         </div>
       </Modal>
 
@@ -866,6 +987,31 @@ export function EquipmentsPage() {
               Informations Équipement
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type d’équipement</label>
+                <select
+                  value={(equipmentToEdit?.equipmentType ?? 'ETX') as EquipmentType}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, equipmentType: e.target.value as EquipmentType }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                >
+                  {equipmentTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Bus CAN</label>
+                <select
+                  value={equipmentToEdit?.supportsCan ? 'yes' : 'no'}
+                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, supportsCan: e.target.value === 'yes' }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                >
+                  <option value="no">Non</option>
+                  <option value="yes">Oui</option>
+                </select>
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série</label>
                 <input
@@ -931,7 +1077,8 @@ export function EquipmentsPage() {
                 <input
                   type="date"
                   value={equipmentToEdit?.firstSendDate ?? ''}
-                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, firstSendDate: e.target.value }))}
+                  readOnly
+                  disabled
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
               </div>
@@ -1407,6 +1554,31 @@ export function EquipmentsPage() {
               Informations Équipement
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type d’équipement</label>
+                <select
+                  value={newStock.equipmentType}
+                  onChange={(e) => setNewStock((p) => ({ ...p, equipmentType: e.target.value as EquipmentType }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                >
+                  {equipmentTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Bus CAN</label>
+                <select
+                  value={newStock.supportsCan ? 'yes' : 'no'}
+                  onChange={(e) => setNewStock((p) => ({ ...p, supportsCan: e.target.value === 'yes' }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                >
+                  <option value="no">Non</option>
+                  <option value="yes">Oui</option>
+                </select>
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série</label>
                 <input
