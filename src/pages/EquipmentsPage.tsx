@@ -65,8 +65,20 @@ const DEFAULT_POSITION = {
 };
 
 export function EquipmentsPage() {
-  const { currentUserRole, currentUserName, clients, setClients, equipments, setEquipments, packs } = useFleetStore();
+  const {
+    currentUserRole,
+    currentUserName,
+    clients,
+    setClients,
+    equipments,
+    setEquipments,
+    packs,
+    simCards,
+    setSimCards,
+    simOffers
+  } = useFleetStore();
   const packById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
+  const simOfferById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
   const isTunavUser = currentUserRole === 'Tunav';
 
   const [activeTab, setActiveTab] = useState<'clients' | 'stock' | 'resellers'>('clients');
@@ -110,16 +122,15 @@ export function EquipmentsPage() {
   const [stockToAssign, setStockToAssign] = useState<any | null>(null);
   const [assignClientName, setAssignClientName] = useState<string>('');
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignSimId, setAssignSimId] = useState<number | null>(null);
 
   const [isAssignResellerOpen, setIsAssignResellerOpen] = useState(false);
   const [assignResellerName, setAssignResellerName] = useState<string>('');
+  const [assignResellerSimId, setAssignResellerSimId] = useState<number | null>(null);
 
   const [isAddStockOpen, setIsAddStockOpen] = useState(false);
   const [newStock, setNewStock] = useState({
     serial: '',
-    sim: '',
-    simCallNumber: '',
-    iccid: '',
     server: '',
     port: '',
     firstSendDate: '',
@@ -326,6 +337,7 @@ export function EquipmentsPage() {
     setStockToAssign(eq);
     setAssignClientName('');
     setAssignError(null);
+    setAssignSimId(null);
     setIsAssignClientOpen(true);
   };
 
@@ -339,6 +351,7 @@ export function EquipmentsPage() {
       setAssignError(`Limite atteinte: ${installed}/${limit}.`);
       return;
     }
+    const selectedSim = assignSimId != null ? simCards.find((s) => s.id === assignSimId) : undefined;
     setEquipments((prev) =>
       prev.map((e) =>
         e.id === stockToAssign.id
@@ -347,11 +360,25 @@ export function EquipmentsPage() {
               client: c.name,
               reseller: c.reseller,
               car: 'Unassigned',
-              packId: e.packId ?? c.packs?.[0]?.packId
+              packId: e.packId ?? c.packs?.[0]?.packId,
+              ...(selectedSim
+                ? {
+                    sim: selectedSim.phoneNumber,
+                    simCallNumber: selectedSim.phoneNumber,
+                    iccid: selectedSim.iccid
+                  }
+                : {})
             }
           : e
       )
     );
+    if (selectedSim) {
+      setSimCards((prev) =>
+        prev.map((s) =>
+          s.id === selectedSim.id ? { ...s, equipmentId: stockToAssign.id, client: c.name, reseller: c.reseller } : s
+        )
+      );
+    }
     setIsAssignClientOpen(false);
   };
 
@@ -359,6 +386,7 @@ export function EquipmentsPage() {
     setStockToAssign(eq);
     setAssignResellerName('');
     setAssignError(null);
+    setAssignResellerSimId(null);
     setIsAssignResellerOpen(true);
   };
 
@@ -367,22 +395,42 @@ export function EquipmentsPage() {
     if (currentUserRole !== 'Tunav') return;
     const r = clients.find((x) => x.type === 'Revendeur' && x.name === assignResellerName);
     if (!r) return;
+    const selectedSim = assignResellerSimId != null ? simCards.find((s) => s.id === assignResellerSimId) : undefined;
     setEquipments((prev) =>
       prev.map((e) =>
         e.id === stockToAssign.id
-          ? { ...e, reseller: r.name, client: `${r.name}_Stock`, car: 'Unassigned', isInstalled: false }
+          ? {
+              ...e,
+              reseller: r.name,
+              client: `${r.name}_Stock`,
+              car: 'Unassigned',
+              isInstalled: false,
+              ...(selectedSim
+                ? {
+                    sim: selectedSim.phoneNumber,
+                    simCallNumber: selectedSim.phoneNumber,
+                    iccid: selectedSim.iccid
+                  }
+                : {})
+            }
           : e
       )
     );
+    if (selectedSim) {
+      setSimCards((prev) =>
+        prev.map((s) =>
+          s.id === selectedSim.id
+            ? { ...s, equipmentId: stockToAssign.id, client: `${r.name}_Stock`, reseller: r.name }
+            : s
+        )
+      );
+    }
     setIsAssignResellerOpen(false);
   };
 
   const openAddStock = () => {
     setNewStock({
       serial: '',
-      sim: '',
-      simCallNumber: '',
-      iccid: '',
       server: '',
       port: '',
       firstSendDate: '',
@@ -406,9 +454,9 @@ export function EquipmentsPage() {
         supportsCan: newStock.supportsCan,
         packId: undefined,
         type: newStock.type,
-        sim: newStock.sim.trim(),
-        simCallNumber: newStock.simCallNumber.trim(),
-        iccid: newStock.iccid.trim(),
+        sim: '',
+        simCallNumber: '',
+        iccid: '',
         server: newStock.server.trim(),
         port: newStock.port.trim(),
         firstSendDate: newStock.firstSendDate,
@@ -1466,7 +1514,10 @@ export function EquipmentsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
             <select
               value={assignClientName}
-              onChange={(e) => setAssignClientName(e.target.value)}
+              onChange={(e) => {
+                setAssignClientName(e.target.value);
+                setAssignSimId(null);
+              }}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
               <option value="">Sélectionner…</option>
@@ -1482,6 +1533,71 @@ export function EquipmentsPage() {
                 ))}
             </select>
           </div>
+
+          {assignClientName && (() => {
+            const clientSims = simCards.filter(
+              (s) => s.client === assignClientName && s.equipmentId == null
+            );
+            return (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  N° de série puce (ICCID){' '}
+                  <span className="text-[11px] text-slate-500 font-normal">— optionnel</span>
+                </label>
+                {clientSims.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm">
+                    Aucune puce disponible pour ce client. Vous pouvez en affecter une depuis « Gestion des puces ».
+                  </div>
+                ) : (
+                  <select
+                    value={assignSimId ?? ''}
+                    onChange={(e) => setAssignSimId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                  >
+                    <option value="">— Aucune puce —</option>
+                    {clientSims.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.iccid || '(sans ICCID)'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {assignSimId != null && (() => {
+                  const selectedSim = simCards.find((s) => s.id === assignSimId);
+                  if (!selectedSim) return null;
+                  const offer = selectedSim.offerId != null ? simOfferById.get(selectedSim.offerId) : undefined;
+                  return (
+                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">N° de série puce (ICCID)</div>
+                        <div className="font-medium text-slate-900 break-all">{selectedSim.iccid || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">Carte SIM</div>
+                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">N° d'appel puce</div>
+                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">Opérateur</div>
+                        <div className="font-medium text-slate-900">{offer?.operator || '—'}</div>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <div className="text-[11px] uppercase text-slate-500">Offre puce</div>
+                        <div className="font-medium text-slate-900">
+                          {offer ? `${offer.name} — ${offer.pricePerSim.toFixed(2)} TND / puce` : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+
           {assignError && <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{assignError}</div>}
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
@@ -1516,12 +1632,16 @@ export function EquipmentsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Revendeur</label>
             <select
               value={assignResellerName}
-              onChange={(e) => setAssignResellerName(e.target.value)}
+              onChange={(e) => {
+                setAssignResellerName(e.target.value);
+                setAssignResellerSimId(null);
+              }}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
               <option value="">Sélectionner…</option>
               {clients
                 .filter((c) => c.type === 'Revendeur')
+                .filter((c) => c.name !== 'Tunav')
                 .map((c) => (
                   <option key={c.id} value={c.name}>
                     {c.name}
@@ -1529,6 +1649,74 @@ export function EquipmentsPage() {
                 ))}
             </select>
           </div>
+
+          {assignResellerName && (() => {
+            const stockName = `${assignResellerName}_Stock`;
+            const resellerSims = simCards.filter(
+              (s) =>
+                s.equipmentId == null &&
+                (s.client === stockName || s.reseller === assignResellerName)
+            );
+            return (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  N° de série puce (ICCID){' '}
+                  <span className="text-[11px] text-slate-500 font-normal">— optionnel</span>
+                </label>
+                {resellerSims.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm">
+                    Aucune puce disponible pour ce revendeur. Vous pouvez en affecter une depuis « Gestion des puces ».
+                  </div>
+                ) : (
+                  <select
+                    value={assignResellerSimId ?? ''}
+                    onChange={(e) => setAssignResellerSimId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                  >
+                    <option value="">— Aucune puce —</option>
+                    {resellerSims.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.iccid || '(sans ICCID)'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {assignResellerSimId != null && (() => {
+                  const selectedSim = simCards.find((s) => s.id === assignResellerSimId);
+                  if (!selectedSim) return null;
+                  const offer = selectedSim.offerId != null ? simOfferById.get(selectedSim.offerId) : undefined;
+                  return (
+                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">N° de série puce (ICCID)</div>
+                        <div className="font-medium text-slate-900 break-all">{selectedSim.iccid || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">Carte SIM</div>
+                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">N° d'appel puce</div>
+                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-500">Opérateur</div>
+                        <div className="font-medium text-slate-900">{offer?.operator || '—'}</div>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <div className="text-[11px] uppercase text-slate-500">Offre puce</div>
+                        <div className="font-medium text-slate-900">
+                          {offer ? `${offer.name} — ${offer.pricePerSim.toFixed(2)} TND / puce` : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
               onClick={() => setIsAssignResellerOpen(false)}
@@ -1588,31 +1776,11 @@ export function EquipmentsPage() {
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
               </div>
-              <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Carte SIM</label>
-                <input
-                  value={newStock.sim}
-                  onChange={(e) => setNewStock((p) => ({ ...p, sim: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">N° d'appel puce</label>
-                <input
-                  value={newStock.simCallNumber}
-                  onChange={(e) => setNewStock((p) => ({ ...p, simCallNumber: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">N° de série puce (ICCID)</label>
-                <input
-                  value={newStock.iccid}
-                  onChange={(e) => setNewStock((p) => ({ ...p, iccid: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                />
-              </div>
             </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              La puce SIM (ICCID, n° d'appel...) sera associée à l'équipement lors de l'affectation à un client ou à
+              un revendeur depuis l'onglet correspondant.
+            </p>
           </div>
 
           <div>

@@ -75,15 +75,16 @@ export type SimOffer = {
   name: string;
   description: string;
   pricePerSim: number;
+  /** Opérateur téléphonique de l'offre (Télécom, Orange, Ooredoo, ...) */
+  operator: string;
 };
 
 export type SimCard = {
   id: number;
   offerId: number | null;
-  operator: string;
-  /** Numéro de la puce (MSISDN). Optionnel si l’ICCID est renseigné. */
+  /** Numéro de la puce (MSISDN). Optionnel. */
   phoneNumber: string;
-  /** Numéro CCID/ICCID. Optionnel si le numéro de puce est renseigné. */
+  /** Numéro CCID/ICCID. Obligatoire. */
   iccid: string;
   /** Client propriétaire. "<Reseller>_Stock" si la puce est en stock. */
   client: string;
@@ -483,21 +484,24 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
   const [simOffers, setSimOffers] = useState<SimOffer[]>(() => [
     {
       id: 1,
-      name: 'Data 1 Go',
+      name: 'Data 1 Go - Orange',
       description: 'Offre data légère pour télémétrie - 1 Go inclus / mois.',
-      pricePerSim: 4.5
+      pricePerSim: 12,
+      operator: 'Orange'
     },
     {
       id: 2,
-      name: 'Data 5 Go + SMS',
+      name: 'Data 5 Go + SMS - Télécom',
       description: 'Offre standard avec data et SMS pour alertes - 5 Go / mois.',
-      pricePerSim: 9.9
+      pricePerSim: 25,
+      operator: 'Télécom'
     },
     {
       id: 3,
-      name: 'M2M Premium',
-      description: 'Offre M2M premium multi-opérateurs avec data illimitée.',
-      pricePerSim: 14.5
+      name: 'M2M Premium - Ooredoo',
+      description: 'Offre M2M premium avec data illimitée.',
+      pricePerSim: 40,
+      operator: 'Ooredoo'
     }
   ]);
 
@@ -505,8 +509,7 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     {
       id: 1,
       offerId: 2,
-      operator: 'Orange',
-      phoneNumber: '+33612345678',
+      phoneNumber: '+216 71 12 34 56',
       iccid: '89330123456789012345',
       client: 'Transport Express',
       reseller: 'Auto Fleet Pro',
@@ -515,8 +518,7 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     {
       id: 2,
       offerId: 1,
-      operator: 'Télécom',
-      phoneNumber: '+33687654321',
+      phoneNumber: '+216 71 65 43 21',
       iccid: '89330987654321098765',
       client: 'Global Logistics',
       reseller: 'Global Logistics',
@@ -525,7 +527,6 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     {
       id: 3,
       offerId: 3,
-      operator: 'Ooredoo',
       phoneNumber: '+216 71 11 22 33',
       iccid: '89216001100110011001',
       client: 'Société Médicale ABC',
@@ -534,8 +535,7 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     {
       id: 4,
       offerId: 1,
-      operator: 'Orange',
-      phoneNumber: '+33600000001',
+      phoneNumber: '+216 71 00 00 01',
       iccid: '89330000000000000001',
       client: 'Tunav_Stock',
       reseller: 'Tunav'
@@ -543,7 +543,6 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     {
       id: 5,
       offerId: 2,
-      operator: 'Télécom',
       phoneNumber: '',
       iccid: '89330000000000000099',
       client: 'Tunav_Stock',
@@ -552,9 +551,8 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     {
       id: 6,
       offerId: 3,
-      operator: 'Ooredoo',
-      phoneNumber: '+33611112222',
-      iccid: '',
+      phoneNumber: '+216 71 11 11 22',
+      iccid: '89216002200220022002',
       client: 'Auto Fleet Pro_Stock',
       reseller: 'Auto Fleet Pro'
     }

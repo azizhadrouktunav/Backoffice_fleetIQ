@@ -99,23 +99,24 @@ export function SimsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | SimStatus>('all');
   const [offerFilter, setOfferFilter] = useState<number | 'all'>('all');
 
+  const offerById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
+  const equipmentById = useMemo(() => new Map(equipments.map((e) => [e.id, e])), [equipments]);
+
   const filteredSims = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return visibleSims.filter((sim) => {
       if (statusFilter !== 'all' && getSimStatus(sim) !== statusFilter) return false;
       if (offerFilter !== 'all' && sim.offerId !== offerFilter) return false;
       if (!q) return true;
+      const offer = sim.offerId != null ? offerById.get(sim.offerId) : undefined;
       return (
         sim.phoneNumber.toLowerCase().includes(q) ||
         sim.iccid.toLowerCase().includes(q) ||
-        sim.operator.toLowerCase().includes(q) ||
+        (offer?.operator?.toLowerCase().includes(q) ?? false) ||
         sim.client.toLowerCase().includes(q)
       );
     });
-  }, [visibleSims, searchQuery, statusFilter, offerFilter]);
-
-  const offerById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
-  const equipmentById = useMemo(() => new Map(equipments.map((e) => [e.id, e])), [equipments]);
+  }, [visibleSims, searchQuery, statusFilter, offerFilter, offerById]);
 
   // --- Stats ---
   const totalSims = visibleSims.length;
@@ -123,17 +124,42 @@ export function SimsPage() {
   const assignedToEquipment = visibleSims.filter((s) => getSimStatus(s) === 'assigned_equipment').length;
   const assignedNoEquipment = visibleSims.filter((s) => getSimStatus(s) === 'assigned_client').length;
 
+  // Pour chaque offre, on calcule:
+  //  - installed : nb d'équipements installés dont la puce SIM utilise cette offre
+  //  - total    : nb total de puces visibles utilisant cette offre
+  const offerStats = useMemo(() => {
+    const m = new Map<number, { installed: number; total: number }>();
+    for (const sim of visibleSims) {
+      if (sim.offerId == null) continue;
+      const cur = m.get(sim.offerId) ?? { installed: 0, total: 0 };
+      cur.total += 1;
+      if (sim.equipmentId != null) {
+        const eq = equipmentById.get(sim.equipmentId);
+        if (eq?.isInstalled) cur.installed += 1;
+      }
+      m.set(sim.offerId, cur);
+    }
+    return m;
+  }, [visibleSims, equipmentById]);
+
+  const totalInstalledAllOffers = useMemo(
+    () => Array.from(offerStats.values()).reduce((a, b) => a + b.installed, 0),
+    [offerStats]
+  );
+  const totalSimsAllOffers = useMemo(
+    () => Array.from(offerStats.values()).reduce((a, b) => a + b.total, 0),
+    [offerStats]
+  );
+
   // --- Add/Edit SIM modal ---
   const [isSimModalOpen, setIsSimModalOpen] = useState(false);
   const [simEditingId, setSimEditingId] = useState<number | null>(null);
   const [simForm, setSimForm] = useState<{
     offerId: number | null;
-    operator: string;
     phoneNumber: string;
     iccid: string;
   }>({
     offerId: simOffers[0]?.id ?? null,
-    operator: '',
     phoneNumber: '',
     iccid: ''
   });
@@ -142,9 +168,15 @@ export function SimsPage() {
   // --- Offer modal ---
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [offerEditingId, setOfferEditingId] = useState<number | null>(null);
-  const [offerForm, setOfferForm] = useState<{ name: string; description: string; pricePerSim: number }>({
+  const [offerForm, setOfferForm] = useState<{
+    name: string;
+    description: string;
+    operator: string;
+    pricePerSim: number;
+  }>({
     name: '',
     description: '',
+    operator: '',
     pricePerSim: 0
   });
   const [offerError, setOfferError] = useState<string | null>(null);
@@ -162,7 +194,6 @@ export function SimsPage() {
     setSimEditingId(null);
     setSimForm({
       offerId: simOffers[0]?.id ?? null,
-      operator: '',
       phoneNumber: '',
       iccid: ''
     });
@@ -174,7 +205,6 @@ export function SimsPage() {
     setSimEditingId(sim.id);
     setSimForm({
       offerId: sim.offerId,
-      operator: sim.operator,
       phoneNumber: sim.phoneNumber,
       iccid: sim.iccid
     });
@@ -184,10 +214,8 @@ export function SimsPage() {
 
   const validateSimForm = () => {
     if (simForm.offerId == null) return 'Veuillez sélectionner une offre puce.';
-    if (!simForm.operator.trim()) return 'Veuillez renseigner l’opérateur téléphonique.';
-    const phone = simForm.phoneNumber.trim();
     const iccid = simForm.iccid.trim();
-    if (!phone && !iccid) return 'Veuillez renseigner au moins un numéro de puce ou un numéro CCID.';
+    if (!iccid) return 'Le numéro CCID (ICCID) est obligatoire.';
     return null;
   };
 
@@ -206,7 +234,6 @@ export function SimsPage() {
         const next: SimCard = {
           id: nextId,
           offerId: simForm.offerId,
-          operator: simForm.operator.trim(),
           phoneNumber: phone,
           iccid,
           client: stockClientName,
@@ -219,7 +246,6 @@ export function SimsPage() {
           ? {
               ...s,
               offerId: simForm.offerId,
-              operator: simForm.operator.trim(),
               phoneNumber: phone,
               iccid
             }
@@ -231,14 +257,19 @@ export function SimsPage() {
 
   const openCreateOffer = () => {
     setOfferEditingId(null);
-    setOfferForm({ name: '', description: '', pricePerSim: 0 });
+    setOfferForm({ name: '', description: '', operator: '', pricePerSim: 0 });
     setOfferError(null);
     setIsOfferModalOpen(true);
   };
 
   const openEditOffer = (offer: SimOffer) => {
     setOfferEditingId(offer.id);
-    setOfferForm({ name: offer.name, description: offer.description, pricePerSim: offer.pricePerSim });
+    setOfferForm({
+      name: offer.name,
+      description: offer.description,
+      operator: offer.operator,
+      pricePerSim: offer.pricePerSim
+    });
     setOfferError(null);
     setIsOfferModalOpen(true);
   };
@@ -246,6 +277,10 @@ export function SimsPage() {
   const upsertOffer = () => {
     if (!offerForm.name.trim()) {
       setOfferError('Le nom de l’offre est obligatoire.');
+      return;
+    }
+    if (!offerForm.operator.trim()) {
+      setOfferError('L’opérateur téléphonique est obligatoire.');
       return;
     }
     if (!Number.isFinite(offerForm.pricePerSim) || offerForm.pricePerSim < 0) {
@@ -261,6 +296,7 @@ export function SimsPage() {
             id: nextId,
             name: offerForm.name.trim(),
             description: offerForm.description.trim(),
+            operator: offerForm.operator.trim(),
             pricePerSim: Number(offerForm.pricePerSim)
           }
         ];
@@ -271,6 +307,7 @@ export function SimsPage() {
               ...o,
               name: offerForm.name.trim(),
               description: offerForm.description.trim(),
+              operator: offerForm.operator.trim(),
               pricePerSim: Number(offerForm.pricePerSim)
             }
           : o
@@ -387,6 +424,90 @@ export function SimsPage() {
         />
       </div>
 
+      {/* Stats par offre — équipements installés */}
+      {simOffers.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+                Équipements installés par offre
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Nombre total d'équipements <strong>installés</strong> dont la puce SIM utilise chaque offre.
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
+              <Wifi size={12} />
+              Total&nbsp;:&nbsp;
+              <strong className="text-slate-900">
+                {totalInstalledAllOffers} / {totalSimsAllOffers}
+              </strong>
+              <span className="text-slate-500">installés / puces</span>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {simOffers.map((offer) => {
+              const stats = offerStats.get(offer.id) ?? { installed: 0, total: 0 };
+              const { installed, total } = stats;
+              const installRate = total ? Math.round((installed / total) * 100) : 0;
+              return (
+                <div
+                  key={offer.id}
+                  className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-blue-500 shadow-sm p-5 flex flex-col gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-slate-900 truncate">{offer.name}</h3>
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
+                          <Wifi size={11} />
+                          {offer.operator}
+                        </span>
+                        <span className="text-[11px] text-slate-500">{formatPrice(offer.pricePerSim)} / puce</span>
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-blue-50 text-blue-600 shrink-0">
+                      <Package size={18} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-semibold text-slate-900">
+                      {installed}
+                      <span className="text-slate-400 font-normal"> / {total}</span>
+                    </span>
+                    <span className="text-xs text-slate-500">installés / puces</span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all"
+                        style={{ width: `${installRate}%` }}
+                      />
+                    </div>
+                    <div className="text-[11px] text-slate-500 flex items-center justify-between">
+                      <span>{installRate}% installés</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOfferFilter(offer.id);
+                          setStatusFilter('all');
+                        }}
+                        className="text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Voir les puces →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Filters + Table */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
@@ -468,7 +589,7 @@ export function SimsPage() {
                         )}
                       </div>
                     </td>
-                    <td className="p-4 text-slate-700">{sim.operator || '—'}</td>
+                    <td className="p-4 text-slate-700">{offer?.operator || '—'}</td>
                     <td className="p-4">
                       {isStock ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
@@ -570,13 +691,13 @@ export function SimsPage() {
           <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-3">
             <AlertCircle className="shrink-0 mt-0.5" size={16} />
             <p>
-              Au moins l'un des deux champs <strong>Numéro puce</strong> ou <strong>Numéro CCID</strong> doit être
-              rempli (les deux sont possibles).
+              Le <strong>numéro CCID (ICCID)</strong> est obligatoire. L'opérateur téléphonique est défini au
+              niveau de l'offre puce.
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
+            <label className="text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
               <Package size={14} className="text-slate-500" />
               Offre puce <span className="text-red-500">*</span>
             </label>
@@ -591,7 +712,7 @@ export function SimsPage() {
                 <option value="">— Sélectionner une offre —</option>
                 {simOffers.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.name} ({formatPrice(o.pricePerSim)})
+                    {o.name} — {o.operator} ({formatPrice(o.pricePerSim)})
                   </option>
                 ))}
               </select>
@@ -605,39 +726,22 @@ export function SimsPage() {
                 Nouvelle
               </button>
             </div>
+            {simForm.offerId != null && (() => {
+              const selectedOffer = offerById.get(simForm.offerId);
+              if (!selectedOffer) return null;
+              return (
+                <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+                  <Wifi size={11} />
+                  Opérateur de l'offre&nbsp;: <strong className="text-slate-700">{selectedOffer.operator}</strong>
+                </p>
+              );
+            })()}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
-              <Wifi size={14} className="text-slate-500" />
-              Opérateur téléphonique <span className="text-red-500">*</span>
-            </label>
-            <SearchableSelect
-              value={simForm.operator}
-              onChange={(v) => setSimForm((f) => ({ ...f, operator: v }))}
-              options={OPERATORS}
-              placeholder="Sélectionner ou saisir un opérateur..."
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
-              <Smartphone size={14} className="text-slate-500" />
-              Numéro puce
-            </label>
-            <input
-              type="text"
-              value={simForm.phoneNumber}
-              onChange={(e) => setSimForm((f) => ({ ...f, phoneNumber: e.target.value }))}
-              placeholder="Ex: +33 6 12 34 56 78"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
+            <label className="text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
               <Hash size={14} className="text-slate-500" />
-              Numéro CCID (ICCID)
+              Numéro CCID (ICCID) <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -646,9 +750,21 @@ export function SimsPage() {
               placeholder="Ex: 89330123456789012345"
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Au moins l'un des deux numéros (puce ou CCID) doit être renseigné.
-            </p>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
+              <Smartphone size={14} className="text-slate-500" />
+              Numéro puce
+            </label>
+            <input
+              type="text"
+              value={simForm.phoneNumber}
+              onChange={(e) => setSimForm((f) => ({ ...f, phoneNumber: e.target.value }))}
+              placeholder="Ex: +216 71 12 34 56"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">Optionnel.</p>
           </div>
 
           {simError && (
@@ -708,6 +824,10 @@ export function SimsPage() {
                       <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
                         {offer.name}
                       </span>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
+                        <Wifi size={11} />
+                        {offer.operator}
+                      </span>
                       <span className="text-xs font-medium text-slate-600">{formatPrice(offer.pricePerSim)} / puce</span>
                       <span className="text-[11px] text-slate-500">
                         {usage} puce{usage > 1 ? 's' : ''} associée{usage > 1 ? 's' : ''}
@@ -765,6 +885,19 @@ export function SimsPage() {
               placeholder="Décrivez le contenu de l'offre…"
               rows={3}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-slate-700 mb-1 flex items-center gap-1.5">
+              <Wifi size={14} className="text-slate-500" />
+              Opérateur téléphonique <span className="text-red-500">*</span>
+            </label>
+            <SearchableSelect
+              value={offerForm.operator}
+              onChange={(v) => setOfferForm((f) => ({ ...f, operator: v }))}
+              options={OPERATORS}
+              placeholder="Sélectionner un opérateur..."
             />
           </div>
 
@@ -829,11 +962,15 @@ export function SimsPage() {
                 <span className="text-slate-500">ICCID&nbsp;:</span> <strong>{simToAssign.iccid}</strong>
               </div>
             )}
-            {simToAssign?.operator && (
-              <div>
-                <span className="text-slate-500">Opérateur&nbsp;:</span> <strong>{simToAssign.operator}</strong>
-              </div>
-            )}
+            {(() => {
+              const offer = simToAssign?.offerId != null ? offerById.get(simToAssign.offerId) : undefined;
+              if (!offer) return null;
+              return (
+                <div>
+                  <span className="text-slate-500">Opérateur&nbsp;:</span> <strong>{offer.operator}</strong>
+                </div>
+              );
+            })()}
           </div>
 
           <div>
