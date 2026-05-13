@@ -10,7 +10,8 @@ import {
   Wrench,
   Store,
   ShieldCheck,
-  Wallet
+  Wallet,
+  Smartphone
 } from 'lucide-react';
 import { BackofficeRole } from '../pages/LoginPage';
 import { useFleetStore } from '../state/FleetStore';
@@ -20,20 +21,21 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-type NavItemKey = 'dashboard' | 'clients' | 'subscriptions' | 'equipments';
+type NavItemKey = 'dashboard' | 'clients' | 'subscriptions' | 'equipments' | 'sims';
 
 const NAV_ITEMS: { key: NavItemKey; to: string; icon: typeof LayoutDashboard; label: string }[] = [
   { key: 'dashboard', to: '/dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
   { key: 'clients', to: '/clients', icon: Users, label: 'Gestion Clients' },
   { key: 'subscriptions', to: '/subscriptions', icon: Package, label: 'Packs' },
+  { key: 'sims', to: '/sims', icon: Smartphone, label: 'Gestion des puces' },
   { key: 'equipments', to: '/equipments', icon: Server, label: 'Équipements' }
 ];
 
 const ALLOWED_BY_ROLE: Record<BackofficeRole, NavItemKey[]> = {
-  admin_tunav: ['dashboard', 'clients', 'subscriptions', 'equipments'],
-  sav_tunav: ['dashboard', 'equipments'],
+  admin_tunav: ['dashboard', 'clients', 'subscriptions', 'sims', 'equipments'],
+  sav_tunav: ['dashboard', 'sims', 'equipments'],
   finance_tunav: ['dashboard', 'clients', 'subscriptions'],
-  revendeur: ['dashboard', 'clients', 'subscriptions', 'equipments']
+  revendeur: ['dashboard', 'clients', 'subscriptions', 'sims', 'equipments']
 };
 
 const ROLE_META: Record<

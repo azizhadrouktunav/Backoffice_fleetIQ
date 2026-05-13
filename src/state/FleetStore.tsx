@@ -70,6 +70,29 @@ export type FleetEquipment = {
   lastPosition: any;
 };
 
+export type SimOffer = {
+  id: number;
+  name: string;
+  description: string;
+  pricePerSim: number;
+};
+
+export type SimCard = {
+  id: number;
+  offerId: number | null;
+  operator: string;
+  /** Numéro de la puce (MSISDN). Optionnel si l’ICCID est renseigné. */
+  phoneNumber: string;
+  /** Numéro CCID/ICCID. Optionnel si le numéro de puce est renseigné. */
+  iccid: string;
+  /** Client propriétaire. "<Reseller>_Stock" si la puce est en stock. */
+  client: string;
+  /** Revendeur rattaché (ou "Tunav" pour le stock Tunav). */
+  reseller: string;
+  /** Identifiant de l’équipement auquel la puce est affectée, le cas échéant. */
+  equipmentId?: number;
+};
+
 const initialPacks: Pack[] = [
   {
     id: 1,
@@ -373,6 +396,10 @@ type FleetStore = {
   setClients: React.Dispatch<React.SetStateAction<FleetClient[]>>;
   equipments: FleetEquipment[];
   setEquipments: React.Dispatch<React.SetStateAction<FleetEquipment[]>>;
+  simOffers: SimOffer[];
+  setSimOffers: React.Dispatch<React.SetStateAction<SimOffer[]>>;
+  simCards: SimCard[];
+  setSimCards: React.Dispatch<React.SetStateAction<SimCard[]>>;
 };
 
 const FleetStoreContext = createContext<FleetStore | null>(null);
@@ -453,6 +480,86 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
 
   const [equipments, setEquipments] = useState<FleetEquipment[]>(initialEquipments);
 
+  const [simOffers, setSimOffers] = useState<SimOffer[]>(() => [
+    {
+      id: 1,
+      name: 'Data 1 Go',
+      description: 'Offre data légère pour télémétrie - 1 Go inclus / mois.',
+      pricePerSim: 4.5
+    },
+    {
+      id: 2,
+      name: 'Data 5 Go + SMS',
+      description: 'Offre standard avec data et SMS pour alertes - 5 Go / mois.',
+      pricePerSim: 9.9
+    },
+    {
+      id: 3,
+      name: 'M2M Premium',
+      description: 'Offre M2M premium multi-opérateurs avec data illimitée.',
+      pricePerSim: 14.5
+    }
+  ]);
+
+  const [simCards, setSimCards] = useState<SimCard[]>(() => [
+    {
+      id: 1,
+      offerId: 2,
+      operator: 'Orange',
+      phoneNumber: '+33612345678',
+      iccid: '89330123456789012345',
+      client: 'Transport Express',
+      reseller: 'Auto Fleet Pro',
+      equipmentId: 1
+    },
+    {
+      id: 2,
+      offerId: 1,
+      operator: 'Télécom',
+      phoneNumber: '+33687654321',
+      iccid: '89330987654321098765',
+      client: 'Global Logistics',
+      reseller: 'Global Logistics',
+      equipmentId: 2
+    },
+    {
+      id: 3,
+      offerId: 3,
+      operator: 'Ooredoo',
+      phoneNumber: '+216 71 11 22 33',
+      iccid: '89216001100110011001',
+      client: 'Société Médicale ABC',
+      reseller: 'Tunav'
+    },
+    {
+      id: 4,
+      offerId: 1,
+      operator: 'Orange',
+      phoneNumber: '+33600000001',
+      iccid: '89330000000000000001',
+      client: 'Tunav_Stock',
+      reseller: 'Tunav'
+    },
+    {
+      id: 5,
+      offerId: 2,
+      operator: 'Télécom',
+      phoneNumber: '',
+      iccid: '89330000000000000099',
+      client: 'Tunav_Stock',
+      reseller: 'Tunav'
+    },
+    {
+      id: 6,
+      offerId: 3,
+      operator: 'Ooredoo',
+      phoneNumber: '+33611112222',
+      iccid: '',
+      client: 'Auto Fleet Pro_Stock',
+      reseller: 'Auto Fleet Pro'
+    }
+  ]);
+
   const value = useMemo<FleetStore>(
     () => ({
       currentUserRole,
@@ -463,9 +570,13 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
       clients,
       setClients,
       equipments,
-      setEquipments
+      setEquipments,
+      simOffers,
+      setSimOffers,
+      simCards,
+      setSimCards
     }),
-    [currentUserRole, currentUserName, packs, clients, equipments]
+    [currentUserRole, currentUserName, packs, clients, equipments, simOffers, simCards]
   );
 
   return <FleetStoreContext.Provider value={value}>{children}</FleetStoreContext.Provider>;
