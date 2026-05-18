@@ -42,7 +42,7 @@ import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { PeriodKey } from '../components/PeriodFilter';
 import { ClientsFilterBar } from '../components/ClientsFilterBar';
-import { useFleetStore, type FleetClient } from '../state/FleetStore';
+import { useFleetStore, type FleetClient, type FleetEquipment } from '../state/FleetStore';
 import {
   getVisibleClients,
   getVisibleEquipments
@@ -571,7 +571,7 @@ function InstallPlateSelect({
 
 }
 export function ClientsPage() {
-  const { currentUserRole, currentUserName, clients: storeClients, equipments } =
+  const { currentUserRole, currentUserName, clients: storeClients, equipments, setEquipments } =
     useFleetStore();
   const isResellerUser = currentUserRole === 'Revendeur';
   const isTunavUser = currentUserRole === 'Tunav';
@@ -654,10 +654,67 @@ export function ClientsPage() {
     setClientToView(client);
     setIsViewModalOpen(true);
   };
-  const openVehiclesModal = (client: any) => {
+  const openClientEquipmentsModal = (client: FleetClient | (typeof mockClients)[number]) => {
     setClientForVehicles(client);
-    setClientVehicles(allVehicles.filter((v) => v.clientId === client.id));
     setIsVehiclesModalOpen(true);
+  };
+
+  const clientAssignedEquipments = useMemo(() => {
+    if (!clientForVehicles?.name) return [];
+    return equipments.filter(
+      (e) => e.client === clientForVehicles.name && !e.client.endsWith('_Stock')
+    );
+  }, [equipments, clientForVehicles?.name]);
+
+  const installedCountByClient = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of equipments) {
+      if (e.isInstalled && !e.client.endsWith('_Stock')) {
+        m.set(e.client, (m.get(e.client) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [equipments]);
+
+  const [clientEquipmentToInstall, setClientEquipmentToInstall] = useState<FleetEquipment | null>(null);
+  const [clientInstallPlate, setClientInstallPlate] = useState('');
+  const [clientInstallError, setClientInstallError] = useState<string | null>(null);
+  const [isClientInstallOpen, setIsClientInstallOpen] = useState(false);
+
+  const openClientEquipmentInstall = (eq: FleetEquipment) => {
+    const c = storeClients.find((x) => x.name === eq.client);
+    const limit = c?.vehicleLimit;
+    const installed = installedCountByClient.get(eq.client) ?? 0;
+    if (typeof limit === 'number' && limit >= 0 && installed >= limit) {
+      window.alert(`Limite atteinte: ${installed}/${limit} véhicules installés.`);
+      return;
+    }
+    setClientEquipmentToInstall(eq);
+    setClientInstallPlate(eq.car && eq.car !== 'Unassigned' ? eq.car : '');
+    setClientInstallError(null);
+    setIsClientInstallOpen(true);
+  };
+
+  const confirmClientEquipmentInstall = () => {
+    if (!clientEquipmentToInstall) return;
+    const plate = clientInstallPlate.trim();
+    if (!plate) {
+      setClientInstallError('Veuillez saisir une immatriculation.');
+      return;
+    }
+    setEquipments((prev) =>
+      prev.map((e) =>
+        e.id === clientEquipmentToInstall.id ? { ...e, isInstalled: true, car: plate } : e
+      )
+    );
+    setIsClientInstallOpen(false);
+    setClientEquipmentToInstall(null);
+  };
+
+  const uninstallClientEquipment = (eq: FleetEquipment) => {
+    setEquipments((prev) =>
+      prev.map((e) => (e.id === eq.id ? { ...e, isInstalled: false, car: 'Unassigned' } : e))
+    );
   };
   const toggleVehicleStatus = (vehicleId: number, status: boolean) => {
     const updateFn = (prev: any[]) =>
@@ -1084,11 +1141,11 @@ export function ClientsPage() {
                         <Eye size={16} />
                       </button>
                       <button
-                      onClick={() => openVehiclesModal(enrichClientForModal(client))}
+                      onClick={() => openClientEquipmentsModal(client)}
                       className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-                      title="Véhicules">
+                      title="Équipements affectés">
                       
-                        <Car size={16} />
+                        <Cpu size={16} />
                       </button>
                       <button
                       onClick={() => openPaymentModal(enrichClientForModal(client))}
@@ -1698,117 +1755,145 @@ export function ClientsPage() {
         }
       </Modal>
 
-      {/* --- 3. VEHICLES POPUP MODAL --- */}
+      {/* --- 3. CLIENT EQUIPMENTS POPUP --- */}
       <Modal
         isOpen={isVehiclesModalOpen}
         onClose={() => setIsVehiclesModalOpen(false)}
-        title={`Véhicules - ${clientForVehicles?.name}`}
-        size="xl">
-        
+        title={`Équipements affectés — ${clientForVehicles?.name ?? ''}`}
+        size="xl"
+      >
         <div className="space-y-4">
-          <div className="flex justify-end"></div>
-
-          <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <table className="w-full text-left">
+          <p className="text-sm text-slate-600">
+            {clientAssignedEquipments.length} équipement
+            {clientAssignedEquipments.length > 1 ? 's' : ''} affecté
+            {clientAssignedEquipments.length > 1 ? 's' : ''} à ce client.
+          </p>
+          <div className="border border-slate-200 rounded-lg overflow-hidden overflow-x-auto">
+            <table className="w-full text-left min-w-[640px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="p-3 font-medium">Équipement</th>
                   <th className="p-3 font-medium">Véhicule</th>
-                  <th className="p-3 font-medium">Status</th>
+                  <th className="p-3 font-medium">Statut</th>
                   <th className="p-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
-                {clientVehicles.length > 0 ?
-                clientVehicles.map((vehicle) =>
-                <tr key={vehicle.id} className="hover:bg-slate-50">
-                      <td className="p-3 text-slate-600">
-                        {vehicle.equipment !== '-' ?
-                    vehicle.equipment :
-
-                    <span className="text-slate-400 italic">
-                            Non affecté
+                {clientAssignedEquipments.length > 0 ? (
+                  clientAssignedEquipments.map((eq) => {
+                    const eqType = eq.equipmentType ?? eq.type;
+                    const plate = eq.car && eq.car !== 'Unassigned' ? eq.car : null;
+                    return (
+                      <tr key={eq.id} className="hover:bg-slate-50">
+                        <td className="p-3">
+                          <div className="font-medium text-slate-900">{eqType}</div>
+                          <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
+                            <Hash size={11} />
+                            {eq.serial}
+                          </div>
+                        </td>
+                        <td className="p-3 font-medium text-slate-900">
+                          {plate ?? (
+                            <span className="text-slate-400 italic font-normal">—</span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${
+                              eq.isInstalled
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}
+                          >
+                            {eq.isInstalled ? (
+                              <CheckCircle2 size={12} />
+                            ) : (
+                              <XCircle size={12} />
+                            )}
+                            {eq.isInstalled ? 'Installée' : 'Non installée'}
                           </span>
-                    }
-                      </td>
-                      <td className="p-3 font-medium text-slate-900">
-                        {vehicle.plate}
-                      </td>
-                      <td className="p-3">
-                        <span
-                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${vehicle.isInstalled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                      
-                          {vehicle.isInstalled ?
-                      <CheckCircle2 size={12} /> :
-
-                      <XCircle size={12} />
-                      }
-                          {vehicle.isInstalled ? 'Installé' : 'Non installé'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {!vehicle.isInstalled &&
-                      <button
-                        onClick={() => openInstallEquipmentModal(vehicle)}
-                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-                        title="Installer l'équipement">
-                        
-                              <Download size={16} />
+                        </td>
+                        <td className="p-3 text-right">
+                          {eq.isInstalled ? (
+                            <button
+                              type="button"
+                              onClick={() => uninstallClientEquipment(eq)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+                            >
+                              <XCircle size={14} />
+                              Désinstaller
                             </button>
-                      }
-                          <button
-                        onClick={() =>
-                        openViewEquipmentDetailsModal(vehicle)
-                        }
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                        title="Voir les détails de l'équipement"
-                        disabled={
-                        !vehicle.equipment || vehicle.equipment === '-'
-                        }>
-                        
-                            <Eye size={16} />
-                          </button>
-                          <button
-                        onClick={() => openEditEquipmentModal(vehicle)}
-                        className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors"
-                        title="Modifier l'équipement"
-                        disabled={
-                        !vehicle.equipment || vehicle.equipment === '-'
-                        }>
-                        
-                            <Cpu size={16} />
-                          </button>
-                          <button
-                        onClick={() => openConfigModal(vehicle)}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
-                        title="Configuration"
-                        disabled={
-                        !vehicle.equipment || vehicle.equipment === '-'
-                        }>
-                        
-                            <Settings size={16} />
-                          </button>
-                          <button
-                        onClick={() => deleteVehicle(vehicle.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                        title="Supprimer">
-                        
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                ) :
-
-                <tr>
-                    <td colSpan={4} className="p-6 text-center text-slate-500">
-                      Aucun véhicule trouvé pour ce client.
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => openClientEquipmentInstall(eq)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                            >
+                              <CheckCircle2 size={14} />
+                              Installer
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-slate-500">
+                      Aucun équipement affecté à ce client.
                     </td>
                   </tr>
-                }
+                )}
               </tbody>
             </table>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isClientInstallOpen}
+        onClose={() => {
+          setIsClientInstallOpen(false);
+          setClientEquipmentToInstall(null);
+        }}
+        title={`Installer — ${clientEquipmentToInstall?.serial ?? ''}`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Immatriculation (véhicule)
+            </label>
+            <input
+              value={clientInstallPlate}
+              onChange={(e) => setClientInstallPlate(e.target.value)}
+              placeholder="Ex: TN-1234-A"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+          </div>
+          {clientInstallError && (
+            <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">
+              {clientInstallError}
+            </div>
+          )}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setIsClientInstallOpen(false);
+                setClientEquipmentToInstall(null);
+              }}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={confirmClientEquipmentInstall}
+              className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              Installer
+            </button>
           </div>
         </div>
       </Modal>

@@ -414,15 +414,18 @@ export function EquipmentsPage() {
     setIsEditModalOpen(false);
   };
 
-  const openAssign = (eq: any, mode: 'client' | 'reseller') => {
+  const openAssign = (eq: any) => {
     setStockToAssign(eq);
-    setAssignMode(mode);
+    setAssignMode('client');
     setAssignClientName('');
     setAssignResellerName('');
     setAssignError(null);
     setAssignSimId(null);
     setIsAssignOpen(true);
   };
+
+  const canAssignToReseller =
+    isTunavUser && stockToAssign != null && isStockEquipment(stockToAssign.client);
 
   const confirmAssign = () => {
     if (!stockToAssign) return;
@@ -616,10 +619,7 @@ export function EquipmentsPage() {
           setShowPositionMap(false);
           setIsDetailsModalOpen(true);
         }}
-        onInstall={openInstallModal}
-        onUninstall={uninstallEquipment}
-        onAssignClient={(eq) => openAssign(eq, 'client')}
-        onAssignReseller={(eq) => openAssign(eq, 'reseller')}
+        onAssign={openAssign}
         onReturnToStock={(eq) => cancelAssignmentToTunavStock(eq.id)}
       />
 
@@ -1175,13 +1175,52 @@ export function EquipmentsPage() {
       <Modal
         isOpen={isAssignOpen}
         onClose={() => setIsAssignOpen(false)}
-        title={assignMode === 'client' ? 'Affectation — Client' : 'Affectation — Revendeur'}
+        title="Affectation"
         size="md"
       >
         <div className="space-y-4">
           <div className="text-sm text-slate-700">
             Équipement: <strong>{stockToAssign?.serial}</strong>
           </div>
+          {canAssignToReseller && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Type d&apos;affectation</label>
+              <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignMode('client');
+                    setAssignResellerName('');
+                    setAssignSimId(null);
+                    setAssignError(null);
+                  }}
+                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    assignMode === 'client'
+                      ? 'bg-white text-blue-700 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Client
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignMode('reseller');
+                    setAssignClientName('');
+                    setAssignSimId(null);
+                    setAssignError(null);
+                  }}
+                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    assignMode === 'reseller'
+                      ? 'bg-white text-purple-700 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Revendeur
+                </button>
+              </div>
+            </div>
+          )}
           {assignMode === 'client' ? (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>

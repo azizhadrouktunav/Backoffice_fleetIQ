@@ -39,10 +39,7 @@ type Props = {
   onEdit: (eq: FleetEquipment) => void;
   onDelete: (eq: FleetEquipment) => void;
   onViewDetails: (eq: FleetEquipment) => void;
-  onInstall: (eq: FleetEquipment) => void;
-  onUninstall: (eq: FleetEquipment) => void;
-  onAssignClient: (eq: FleetEquipment) => void;
-  onAssignReseller: (eq: FleetEquipment) => void;
+  onAssign: (eq: FleetEquipment) => void;
   onReturnToStock: (eq: FleetEquipment) => void;
 };
 
@@ -69,10 +66,7 @@ export function EquipmentsUnifiedTable({
   onEdit,
   onDelete,
   onViewDetails,
-  onInstall,
-  onUninstall,
-  onAssignClient,
-  onAssignReseller,
+  onAssign,
   onReturnToStock
 }: Props) {
   const renderClientCell = (eq: FleetEquipment) => {
@@ -102,27 +96,18 @@ export function EquipmentsUnifiedTable({
   };
 
   const renderStatusBadge = (eq: FleetEquipment) => {
-    const status = getEquipmentStatus(eq);
-    if (status === 'installed') {
+    if (eq.isInstalled) {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
           <CheckCircle2 size={12} />
-          Installé
-        </span>
-      );
-    }
-    if (status === 'stock') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-50 text-slate-700 border border-slate-200">
-          <Boxes size={12} />
-          Stock Tunav
+          Installée
         </span>
       );
     }
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
         <XCircle size={12} />
-        Non installé
+        Non installée
       </span>
     );
   };
@@ -173,8 +158,8 @@ export function EquipmentsUnifiedTable({
           className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="all">Tous les statuts</option>
-          <option value="installed">Installé</option>
-          <option value="not_installed">Non installé</option>
+          <option value="installed">Installée</option>
+          <option value="not_installed">Non installée</option>
           <option value="stock">Stock Tunav</option>
         </select>
       </div>
@@ -274,27 +259,6 @@ export function EquipmentsUnifiedTable({
                       >
                         <Trash2 size={16} />
                       </button>
-                      {status === 'installed' ? (
-                        <button
-                          type="button"
-                          onClick={() => onUninstall(eq)}
-                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
-                          title="Désinstaller"
-                        >
-                          <XCircle size={16} />
-                        </button>
-                      ) : (
-                        !inStock && (
-                          <button
-                            type="button"
-                            onClick={() => onInstall(eq)}
-                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-                            title="Installer"
-                          >
-                            <CheckCircle2 size={16} />
-                          </button>
-                        )
-                      )}
                       <button
                         type="button"
                         onClick={() => onViewDetails(eq)}
@@ -304,26 +268,14 @@ export function EquipmentsUnifiedTable({
                         <Eye size={16} />
                       </button>
                       {(inStock || status === 'not_installed') && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => onAssignClient(eq)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                            title="Affecter à un client"
-                          >
-                            <ArrowLeftRight size={16} />
-                          </button>
-                          {isTunavUser && inStock && (
-                            <button
-                              type="button"
-                              onClick={() => onAssignReseller(eq)}
-                              className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
-                              title="Affecter à un revendeur"
-                            >
-                              <Store size={16} />
-                            </button>
-                          )}
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => onAssign(eq)}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                          title="Affecter"
+                        >
+                          <ArrowLeftRight size={16} />
+                        </button>
                       )}
                       {!inStock && status !== 'installed' && (
                         <button
