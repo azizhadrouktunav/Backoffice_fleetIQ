@@ -22,6 +22,10 @@ import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { SimCard, SimOffer, useFleetStore } from '../state/FleetStore';
+import {
+  getAssignableSimTargets,
+  getSimAssignmentClientName
+} from '../utils/fleetAssignment';
 
 type SimStatus = 'assigned_equipment' | 'assigned_client' | 'stock';
 
@@ -81,12 +85,7 @@ export function SimsPage() {
 
   // Clients visibles pour l'affectation (clients simples du périmètre courant)
   const assignableClients = useMemo(
-    () =>
-      clients
-        .filter((c) => !c.name.endsWith('_Stock'))
-        .filter((c) => c.name !== 'Tunav')
-        .filter((c) => (isTunavUser ? true : c.reseller === currentUserName))
-        .sort((a, b) => a.name.localeCompare(b.name)),
+    () => getAssignableSimTargets(clients, isTunavUser, currentUserName),
     [clients, isTunavUser, currentUserName]
   );
 
@@ -393,9 +392,11 @@ export function SimsPage() {
     const client = clients.find((c) => c.name === assignClientName);
     if (!client) return;
     const idSet = new Set(assignSimIds);
+    const targetClient = getSimAssignmentClientName(client);
+    const targetReseller = client.type === 'Revendeur' ? client.name : client.reseller;
     setSimCards((prev) =>
       prev.map((s) =>
-        idSet.has(s.id) ? { ...s, client: client.name, reseller: client.reseller } : s
+        idSet.has(s.id) ? { ...s, client: targetClient, reseller: targetReseller } : s
       )
     );
     closeAssignModal();

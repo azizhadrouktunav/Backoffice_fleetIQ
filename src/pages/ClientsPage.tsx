@@ -47,6 +47,7 @@ import {
   getVisibleClients,
   getVisibleEquipments
 } from '../utils/fleetVisibility';
+import { getClientEquipmentSerials } from '../utils/fleetAssignment';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -131,7 +132,7 @@ const mockClients = [
   id: 1,
   name: 'Transport Express',
   type: 'Simple',
-  reseller: 'Auto Fleet Pro',
+  reseller: 'Tunav',
   email: 'contact@texpress.fr',
   tel: '+33 1 23 45 67 89',
   expiry: '2026-12-31',
@@ -150,14 +151,14 @@ const mockClients = [
 },
 {
   id: 2,
-  name: 'Global Logistics',
+  name: 'MyCom',
   type: 'Revendeur',
   reseller: 'Tunav',
-  email: 'admin@glogistics.com',
-  tel: '+33 4 56 78 90 12',
-  expiry: '2026-06-30',
+  email: 'admin@mycom.tn',
+  tel: '+216 70 00 00 01',
+  expiry: '2026-12-31',
   status: 'Active',
-  website: 'www.glogistics.com',
+  website: 'www.mycom.tn',
   formula: 'Enterprise',
   abonnement: 'FleetIQ Secure',
   timezone: 'UTC+1',
@@ -173,7 +174,7 @@ const mockClients = [
   id: 3,
   name: 'Livraison Rapide',
   type: 'Simple',
-  reseller: 'Global Logistics',
+  reseller: 'MyCom',
   email: 'hello@lrapide.fr',
   tel: '+33 6 12 34 56 78',
   expiry: '2024-10-15',
@@ -188,27 +189,6 @@ const mockClients = [
   vehicleLimit: 20,
   accountLimit: 5,
   username: 'lrapide_admin',
-  password: '••••••••'
-},
-{
-  id: 4,
-  name: 'Auto Fleet Pro',
-  type: 'Revendeur',
-  reseller: 'Tunav',
-  email: 'contact@autofleet.pro',
-  tel: '+33 9 87 65 43 21',
-  expiry: '2025-01-01',
-  status: 'Active',
-  website: 'www.autofleet.pro',
-  formula: 'Enterprise',
-  abonnement: 'FleetIQ Vision',
-  timezone: 'UTC+2',
-  address: "22 Rue de l'Automobile, 31000 Toulouse, France",
-  tel2: '+33 9 11 22 33 44',
-  email2: 'admin@autofleet.pro',
-  vehicleLimit: -1,
-  accountLimit: -1,
-  username: 'autofleet_admin',
   password: '••••••••'
 },
 {
@@ -905,14 +885,8 @@ export function ClientsPage() {
     setPeriodEnd('');
   };
 
-  const getEquipmentLabel = (client: FleetClient) => {
-    if (client.type === 'Revendeur') {
-      return String(equipmentStats.resellerTotals.get(client.name) ?? 0);
-    }
-    const stats = equipmentStats.simpleByClient.get(client.name);
-    if (!stats) return '0/0';
-    return `${stats.installed}/${stats.total}`;
-  };
+  const getClientImeis = (client: FleetClient) =>
+    getClientEquipmentSerials(client, visibleEquipments);
 
   const totalEquipmentCount = useMemo(
     () =>
@@ -1035,12 +1009,10 @@ export function ClientsPage() {
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-                <th className="p-4 font-medium">Nom Client</th>
-                <th className="p-4 font-medium">Type Client</th>
+                <th className="p-4 font-medium">Client</th>
                 <th className="p-4 font-medium">Revendeur</th>
-                <th className="p-4 font-medium">Contact</th>
-                <th className="p-4 font-medium">Expiration</th>
-                <th className="p-4 font-medium">Équipements</th>
+                <th className="p-4 font-medium">Type</th>
+                <th className="p-4 font-medium">IMEI</th>
                 <th className="p-4 font-medium">Statut</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
@@ -1051,43 +1023,39 @@ export function ClientsPage() {
                 key={client.id}
                 className="hover:bg-slate-50 transition-colors">
                 
-                  <td className="p-4 font-medium text-slate-900">
-                    {client.name}
-                  </td>
-                  <td className="p-4">
-                    <span
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium ${client.type === 'Revendeur' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-                    
-                      {client.type}
-                    </span>
-                  </td>
+                  <td className="p-4 font-medium text-slate-900">{client.name}</td>
                   <td className="p-4 text-slate-600">{client.reseller}</td>
                   <td className="p-4">
-                    <div className="text-slate-900 text-sm">{client.email}</div>
-                    <div className="text-slate-500 text-xs">{client.tel}</div>
-                  </td>
-                  <td className="p-4 text-slate-600">
-                    {new Date(client.expiry).toLocaleDateString('fr-FR')}
+                    <span
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium ${client.type === 'Revendeur' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      {client.type === 'Revendeur' ? 'Revendeur' : 'Simple'}
+                    </span>
                   </td>
                   <td className="p-4">
-                    <span
-                      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium"
-                      title={
-                        client.type === 'Revendeur'
-                          ? 'Équipements affectés au revendeur'
-                          : 'Installés / total'
-                      }>
-                      <Cpu size={12} className="text-slate-400" />
-                      {getEquipmentLabel(client)}
-                    </span>
-                    {client.type === 'Simple' && (
-                      <div className="text-[10px] text-slate-400 mt-0.5">
-                        installés / total
-                      </div>
-                    )}
-                    {client.type === 'Revendeur' && (
-                      <div className="text-[10px] text-slate-400 mt-0.5">total affectés</div>
-                    )}
+                    {(() => {
+                      const imeis = getClientImeis(client);
+                      if (imeis.length === 0) {
+                        return <span className="text-slate-400 italic text-xs">Aucun IMEI</span>;
+                      }
+                      return (
+                        <div className="flex flex-col gap-0.5 max-w-[220px]">
+                          {imeis.slice(0, 3).map((serial) => (
+                            <span
+                              key={serial}
+                              className="inline-flex items-center gap-1 text-xs font-mono text-slate-700 truncate"
+                              title={serial}
+                            >
+                              <Hash size={11} className="text-slate-400 shrink-0" />
+                              {serial}
+                            </span>
+                          ))}
+                          {imeis.length > 3 && (
+                            <span className="text-[10px] text-slate-400">+{imeis.length - 3} autre(s)</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="p-4">
                     <span

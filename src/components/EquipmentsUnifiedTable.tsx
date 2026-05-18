@@ -7,9 +7,7 @@ import {
   ArrowLeftRight,
   Boxes,
   Store,
-  Cpu,
   Hash,
-  User as UserIcon,
   Trash2,
   Package,
   Smartphone
@@ -77,29 +75,29 @@ export function EquipmentsUnifiedTable({
   onAssignReseller,
   onReturnToStock
 }: Props) {
-  const renderClientResellerCell = (eq: FleetEquipment) => {
+  const renderClientCell = (eq: FleetEquipment) => {
     if (isStockEquipment(eq.client)) {
       return (
-        <div className="flex flex-col gap-0.5">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
-            <Boxes size={12} />
-            Stock
-          </span>
-          <span className="font-medium text-slate-900">{eq.client}</span>
-          {eq.reseller && <span className="text-[11px] text-slate-500">Revendeur : {eq.reseller}</span>}
-        </div>
+        <span className="font-medium text-slate-900 inline-flex items-center gap-1.5">
+          <Boxes size={12} className="text-slate-400 shrink-0" />
+          {eq.client}
+        </span>
       );
     }
+    return <span className="font-medium text-slate-900">{eq.client}</span>;
+  };
+
+  const renderResellerCell = (eq: FleetEquipment) => {
+    if (!eq.reseller) {
+      return <span className="text-slate-400 italic text-xs">—</span>;
+    }
     const clientEntity = clients.find((c) => c.name === eq.client);
+    const isResellerEntity = clientEntity?.type === 'Revendeur' && eq.client === eq.reseller;
     return (
-      <div className="flex flex-col gap-0.5">
-        <span className="font-medium text-slate-900">{eq.client}</span>
-        <span className="text-[11px] text-slate-500 inline-flex items-center gap-1">
-          {clientEntity?.type === 'Revendeur' ? <Store size={11} /> : <UserIcon size={11} />}
-          {clientEntity?.type === 'Revendeur' ? 'Revendeur' : 'Client'}
-          {eq.reseller && eq.reseller !== eq.client ? ` · ${eq.reseller}` : ''}
-        </span>
-      </div>
+      <span className="text-slate-700 inline-flex items-center gap-1.5">
+        {isResellerEntity && <Store size={12} className="text-slate-400 shrink-0" />}
+        {eq.reseller}
+      </span>
     );
   };
 
@@ -185,8 +183,10 @@ export function EquipmentsUnifiedTable({
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-              <th className="p-4 font-medium">Client / Revendeur</th>
-              <th className="p-4 font-medium">Type / IMEI</th>
+              <th className="p-4 font-medium">Client</th>
+              <th className="p-4 font-medium">Revendeur</th>
+              <th className="p-4 font-medium">Type</th>
+              <th className="p-4 font-medium">IMEI</th>
               <th className="p-4 font-medium">Carte SIM / Offre</th>
               <th className="p-4 font-medium">Pack</th>
               <th className="p-4 font-medium">Statut</th>
@@ -206,13 +206,16 @@ export function EquipmentsUnifiedTable({
 
               return (
                 <tr key={eq.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-4">{renderClientResellerCell(eq)}</td>
+                  <td className="p-4">{renderClientCell(eq)}</td>
+                  <td className="p-4">{renderResellerCell(eq)}</td>
                   <td className="p-4">
-                    <div className="font-medium text-slate-900">{eqType}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-                      <Cpu size={11} />
-                      IMEI : {eq.serial}
-                    </div>
+                    <span className="font-medium text-slate-900">{eqType}</span>
+                  </td>
+                  <td className="p-4">
+                    <span className="text-slate-700 font-mono text-xs inline-flex items-center gap-1">
+                      <Hash size={11} className="text-slate-400 shrink-0" />
+                      {eq.serial}
+                    </span>
                   </td>
                   <td className="p-4">
                     <div className="flex flex-col gap-1">
@@ -339,7 +342,7 @@ export function EquipmentsUnifiedTable({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-slate-500">
+                <td colSpan={8} className="p-8 text-center text-slate-500">
                   Aucun équipement trouvé.
                 </td>
               </tr>

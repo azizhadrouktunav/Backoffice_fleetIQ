@@ -1269,8 +1269,12 @@ export function EquipmentsPage() {
                 {clients
                   .filter((c) => !c.name.endsWith('_Stock'))
                   .filter((c) => c.name !== 'Tunav')
-                  .filter((c) => c.type !== 'Revendeur')
-                  .filter((c) => c.reseller === currentUserName)
+                  .filter((c) => c.type === 'Simple')
+                  .filter((c) =>
+                    currentUserRole === 'Tunav'
+                      ? c.reseller === 'Tunav'
+                      : c.reseller === currentUserName
+                  )
                   .map((c) => (
                     <option key={c.id} value={c.name}>
                       {c.name}

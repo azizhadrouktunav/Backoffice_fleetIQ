@@ -3,11 +3,13 @@ import type { FleetClient, FleetEquipment } from '../state/FleetStore';
 /** Clients affichés par défaut dans Gestion Clients (vue Tunav). */
 export const GESTION_CLIENTS_SHOWCASE_NAMES = [
   'Transport Express',
-  'Global Logistics',
+  'MyCom',
   'Société Médicale ABC',
   'Transport Urbain Tunis',
   'Fret International',
-  'Distribution Nord'
+  'Distribution Nord',
+  'Livraison Rapide',
+  'Logistique Sud'
 ] as const;
 
 const showcaseNameSet = new Set<string>(GESTION_CLIENTS_SHOWCASE_NAMES);
