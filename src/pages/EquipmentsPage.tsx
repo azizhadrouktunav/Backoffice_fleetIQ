@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   Edit2,
   Eye,
-  Settings,
   XCircle,
   Plus,
   ArrowLeftRight,
@@ -22,10 +21,18 @@ import {
   Thermometer,
   Navigation,
   User as UserIcon,
-  Car as CarIcon
+  Car as CarIcon,
+  Trash2,
+  Smartphone,
+  AlertCircle,
+  Search,
+  Check
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { StatCard } from '../components/StatCard';
+import { EquipmentsUnifiedTable } from '../components/EquipmentsUnifiedTable';
 import { EquipmentType, useFleetStore } from '../state/FleetStore';
+import { getVisibleEquipments, isStockClientName } from '../utils/fleetVisibility';
 import {
   MapContainer as MapContainerBase,
   TileLayer as TileLayerBase,
@@ -81,20 +88,19 @@ export function EquipmentsPage() {
   const simOfferById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
   const isTunavUser = currentUserRole === 'Tunav';
 
-  const [activeTab, setActiveTab] = useState<'clients' | 'stock' | 'resellers'>('clients');
+  type EquipmentStatusFilter = 'all' | 'installed' | 'not_installed' | 'stock';
+  const [filterEquipmentType, setFilterEquipmentType] = useState<string>('all');
+  const [filterClientReseller, setFilterClientReseller] = useState<string>('all');
+  const [filterPack, setFilterPack] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<EquipmentStatusFilter>('all');
 
-  const [isResellerEquipmentsOpen, setIsResellerEquipmentsOpen] = useState(false);
-  const [resellerToView, setResellerToView] = useState<(typeof clients)[number] | null>(null);
-
-  const [isClientEquipmentsOpen, setIsClientEquipmentsOpen] = useState(false);
-  const [clientToView, setClientToView] = useState<(typeof clients)[number] | null>(null);
+  const [equipmentToDelete, setEquipmentToDelete] = useState<any | null>(null);
+  const [assignMode, setAssignMode] = useState<'client' | 'reseller'>('client');
 
   const [equipmentToEdit, setEquipmentToEdit] = useState<any | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-
-  const [isEditPackModalOpen, setIsEditPackModalOpen] = useState(false);
-  const [equipmentToEditPack, setEquipmentToEditPack] = useState<any | null>(null);
-  const [selectedEquipmentPackId, setSelectedEquipmentPackId] = useState<number | null>(null);
+  const [editSimId, setEditSimId] = useState<number | null>(null);
+  const [editSimSearch, setEditSimSearch] = useState('');
 
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [equipmentToView, setEquipmentToView] = useState<any | null>(null);
@@ -118,15 +124,12 @@ export function EquipmentsPage() {
     return Array.from(plates).sort((a, b) => a.localeCompare(b));
   }, [equipments, equipmentToInstall]);
 
-  const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [stockToAssign, setStockToAssign] = useState<any | null>(null);
   const [assignClientName, setAssignClientName] = useState<string>('');
+  const [assignResellerName, setAssignResellerName] = useState<string>('');
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignSimId, setAssignSimId] = useState<number | null>(null);
-
-  const [isAssignResellerOpen, setIsAssignResellerOpen] = useState(false);
-  const [assignResellerName, setAssignResellerName] = useState<string>('');
-  const [assignResellerSimId, setAssignResellerSimId] = useState<number | null>(null);
 
   const [isAddStockOpen, setIsAddStockOpen] = useState(false);
   const [newStock, setNewStock] = useState({
@@ -180,10 +183,75 @@ export function EquipmentsPage() {
     [equipments, stockClientName]
   );
 
-  const totalInstalled = useMemo(() => equipments.filter((e) => e.isInstalled).length, [equipments]);
-  const totalNotInstalled = useMemo(() => equipments.filter((e) => !e.isInstalled).length, [equipments]);
+  const isStockEquipment = (client: string) => client.endsWith('_Stock');
 
-  // Resellers attached to Tunav (used by the "Affectation Revendeur" tab)
+  const getEquipmentStatus = (eq: (typeof equipments)[number]): 'installed' | 'not_installed' | 'stock' => {
+    if (isStockEquipment(eq.client)) return 'stock';
+    if (eq.isInstalled) return 'installed';
+    return 'not_installed';
+  };
+
+  const simByEquipmentId = useMemo(() => {
+    const m = new Map<number, (typeof simCards)[number]>();
+    for (const s of simCards) {
+      if (s.equipmentId != null) m.set(s.equipmentId, s);
+    }
+    return m;
+  }, [simCards]);
+
+  const visibleEquipments = useMemo(
+    () => getVisibleEquipments(equipments, currentUserRole, currentUserName),
+    [equipments, currentUserRole, currentUserName]
+  );
+
+  const clientResellerFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const e of visibleEquipments) {
+      if (isStockEquipment(e.client)) {
+        names.add(e.client);
+      } else {
+        names.add(e.client);
+        if (e.reseller && e.reseller !== 'Tunav') names.add(e.reseller);
+      }
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [visibleEquipments]);
+
+  const filteredEquipments = useMemo(() => {
+    return visibleEquipments.filter((eq) => {
+      if (filterEquipmentType !== 'all') {
+        const t = eq.equipmentType ?? eq.type;
+        if (t !== filterEquipmentType) return false;
+      }
+      if (filterClientReseller !== 'all') {
+        const matchClient = eq.client === filterClientReseller;
+        const matchReseller = eq.reseller === filterClientReseller;
+        if (!matchClient && !matchReseller) return false;
+      }
+      if (filterPack !== 'all') {
+        if (filterPack === 'none') {
+          if (eq.packId != null) return false;
+        } else if (String(eq.packId) !== filterPack) return false;
+      }
+      if (filterStatus !== 'all' && getEquipmentStatus(eq) !== filterStatus) return false;
+      return true;
+    });
+  }, [visibleEquipments, filterEquipmentType, filterClientReseller, filterPack, filterStatus]);
+
+  const stats = useMemo(() => {
+    const total = visibleEquipments.length;
+    let installed = 0;
+    let notInstalled = 0;
+    let stock = 0;
+    for (const e of visibleEquipments) {
+      const s = getEquipmentStatus(e);
+      if (s === 'installed') installed += 1;
+      else if (s === 'stock') stock += 1;
+      else notInstalled += 1;
+    }
+    return { total, installed, notInstalled, stock };
+  }, [visibleEquipments]);
+
   const resellersList = useMemo(
     () =>
       clients
@@ -197,31 +265,6 @@ export function EquipmentsPage() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [clients]
   );
-
-  // Per-reseller stats based on equipments where reseller === r.name
-  const resellerStatsByName = useMemo(() => {
-    const m = new Map<string, { total: number; inStock: number; assigned: number; installed: number }>();
-    for (const e of equipments) {
-      if (!e.reseller || e.reseller === 'Tunav') continue;
-      const cur = m.get(e.reseller) ?? { total: 0, inStock: 0, assigned: 0, installed: 0 };
-      cur.total += 1;
-      if (e.client === `${e.reseller}_Stock`) cur.inStock += 1;
-      else cur.assigned += 1;
-      if (e.isInstalled) cur.installed += 1;
-      m.set(e.reseller, cur);
-    }
-    return m;
-  }, [equipments]);
-
-  const resellerEquipments = useMemo(() => {
-    if (!resellerToView) return [];
-    return equipments.filter((e) => e.reseller === resellerToView.name);
-  }, [equipments, resellerToView]);
-
-  const openResellerEquipments = (r: (typeof clients)[number]) => {
-    setResellerToView(r);
-    setIsResellerEquipmentsOpen(true);
-  };
 
   const saveQuotas = () => {
     if (!clientToQuota) return;
@@ -249,16 +292,6 @@ export function EquipmentsPage() {
     );
     setIsQuotasOpen(false);
   };
-
-  const openClientEquipments = (c: (typeof clients)[number]) => {
-    setClientToView(c);
-    setIsClientEquipmentsOpen(true);
-  };
-
-  const clientEquipments = useMemo(() => {
-    if (!clientToView) return [];
-    return equipments.filter((e) => e.client === clientToView.name);
-  }, [equipments, clientToView]);
 
   const cancelAssignmentToTunavStock = (equipmentId: number) => {
     setEquipments((prev) =>
@@ -304,128 +337,185 @@ export function EquipmentsPage() {
     setIsInstallModalOpen(false);
   };
 
+  const uninstallEquipment = (eq: (typeof equipments)[number]) => {
+    setEquipments((prev) =>
+      prev.map((e) =>
+        e.id === eq.id ? { ...e, isInstalled: false, car: 'Unassigned' } : e
+      )
+    );
+  };
+
+  const confirmDeleteEquipment = () => {
+    if (!equipmentToDelete) return;
+    setEquipments((prev) => prev.filter((e) => e.id !== equipmentToDelete.id));
+    setSimCards((prev) =>
+      prev.map((s) => (s.equipmentId === equipmentToDelete.id ? { ...s, equipmentId: undefined } : s))
+    );
+    setEquipmentToDelete(null);
+  };
+
+  const editAvailableSims = useMemo(() => {
+    if (!equipmentToEdit) return [];
+    const eq = equipmentToEdit;
+    const stock = isStockClientName(eq.client);
+    return simCards.filter((s) => {
+      if (s.equipmentId === eq.id) return true;
+      if (s.equipmentId != null) return false;
+      if (stock) {
+        return s.client === eq.client || s.reseller === eq.reseller;
+      }
+      return s.client === eq.client;
+    });
+  }, [simCards, equipmentToEdit]);
+
+  const filteredEditSims = useMemo(() => {
+    const q = editSimSearch.trim().toLowerCase();
+    if (!q) return editAvailableSims;
+    return editAvailableSims.filter(
+      (s) =>
+        s.iccid.toLowerCase().includes(q) ||
+        (s.phoneNumber && s.phoneNumber.toLowerCase().includes(q))
+    );
+  }, [editAvailableSims, editSimSearch]);
+
   const openEditEquipment = (eq: any) => {
-    setEquipmentToEdit({ ...eq });
+    const client = clients.find((c) => c.name === eq.client && !c.name.endsWith('_Stock'));
+    const defaultPackId =
+      typeof eq.packId === 'number'
+        ? eq.packId
+        : client?.packs?.[0]?.packId ?? packs[0]?.id ?? null;
+    const currentSim =
+      simCards.find((s) => s.equipmentId === eq.id) ??
+      simCards.find((s) => s.iccid && s.iccid === eq.iccid);
+    setEditSimId(currentSim?.id ?? null);
+    setEditSimSearch(currentSim?.iccid ?? '');
+    setEquipmentToEdit({ ...eq, packId: defaultPackId ?? eq.packId });
     setIsEditModalOpen(true);
   };
 
   const saveEditEquipment = () => {
     if (!equipmentToEdit) return;
-    setEquipments((prev) => prev.map((e) => (e.id === equipmentToEdit.id ? { ...e, ...equipmentToEdit } : e)));
+    const eqId = equipmentToEdit.id;
+    const selectedSim = editSimId != null ? simCards.find((s) => s.id === editSimId) : undefined;
+    const updatedEq = {
+      ...equipmentToEdit,
+      ...(selectedSim
+        ? {
+            sim: selectedSim.phoneNumber,
+            simCallNumber: selectedSim.phoneNumber,
+            iccid: selectedSim.iccid
+          }
+        : { sim: '', simCallNumber: '', iccid: '' })
+    };
+    setEquipments((prev) => prev.map((e) => (e.id === eqId ? updatedEq : e)));
+    setSimCards((prev) =>
+      prev.map((s) => {
+        if (s.equipmentId === eqId && s.id !== editSimId) {
+          return { ...s, equipmentId: undefined };
+        }
+        if (editSimId != null && s.id === editSimId) {
+          return {
+            ...s,
+            equipmentId: eqId,
+            client: equipmentToEdit.client,
+            reseller: equipmentToEdit.reseller
+          };
+        }
+        return s;
+      })
+    );
     setIsEditModalOpen(false);
   };
 
-  const openEditEquipmentPack = (eq: any) => {
-    if (!clientToView) return;
-    const client = clients.find((c) => c.name === clientToView.name);
-    if (!client || !client.packs || client.packs.length === 0) return;
-    setEquipmentToEditPack(eq);
-    setSelectedEquipmentPackId(typeof eq.packId === 'number' ? eq.packId : client.packs[0].packId);
-    setIsEditPackModalOpen(true);
-  };
-
-  const saveEquipmentPack = () => {
-    if (!equipmentToEditPack) return;
-    if (selectedEquipmentPackId == null) return;
-    setEquipments((prev) =>
-      prev.map((e) => (e.id === equipmentToEditPack.id ? { ...e, packId: selectedEquipmentPackId } : e))
-    );
-    setIsEditPackModalOpen(false);
-  };
-
-  const openAssignToClient = (eq: any) => {
+  const openAssign = (eq: any, mode: 'client' | 'reseller') => {
     setStockToAssign(eq);
+    setAssignMode(mode);
     setAssignClientName('');
-    setAssignError(null);
-    setAssignSimId(null);
-    setIsAssignClientOpen(true);
-  };
-
-  const confirmAssignToClient = () => {
-    if (!stockToAssign) return;
-    const c = clients.find((x) => x.name === assignClientName);
-    if (!c) return;
-    const limit = c.vehicleLimit;
-    const installed = installedCountByClient.get(c.name) ?? 0;
-    if (typeof limit === 'number' && installed >= limit) {
-      setAssignError(`Limite atteinte: ${installed}/${limit}.`);
-      return;
-    }
-    const selectedSim = assignSimId != null ? simCards.find((s) => s.id === assignSimId) : undefined;
-    setEquipments((prev) =>
-      prev.map((e) =>
-        e.id === stockToAssign.id
-          ? {
-              ...e,
-              client: c.name,
-              reseller: c.reseller,
-              car: 'Unassigned',
-              packId: e.packId ?? c.packs?.[0]?.packId,
-              ...(selectedSim
-                ? {
-                    sim: selectedSim.phoneNumber,
-                    simCallNumber: selectedSim.phoneNumber,
-                    iccid: selectedSim.iccid
-                  }
-                : {})
-            }
-          : e
-      )
-    );
-    if (selectedSim) {
-      setSimCards((prev) =>
-        prev.map((s) =>
-          s.id === selectedSim.id ? { ...s, equipmentId: stockToAssign.id, client: c.name, reseller: c.reseller } : s
-        )
-      );
-    }
-    setIsAssignClientOpen(false);
-  };
-
-  const openAssignToReseller = (eq: any) => {
-    setStockToAssign(eq);
     setAssignResellerName('');
     setAssignError(null);
-    setAssignResellerSimId(null);
-    setIsAssignResellerOpen(true);
+    setAssignSimId(null);
+    setIsAssignOpen(true);
   };
 
-  const confirmAssignToReseller = () => {
+  const confirmAssign = () => {
     if (!stockToAssign) return;
-    if (currentUserRole !== 'Tunav') return;
-    const r = clients.find((x) => x.type === 'Revendeur' && x.name === assignResellerName);
-    if (!r) return;
-    const selectedSim = assignResellerSimId != null ? simCards.find((s) => s.id === assignResellerSimId) : undefined;
-    setEquipments((prev) =>
-      prev.map((e) =>
-        e.id === stockToAssign.id
-          ? {
-              ...e,
-              reseller: r.name,
-              client: `${r.name}_Stock`,
-              car: 'Unassigned',
-              isInstalled: false,
-              ...(selectedSim
-                ? {
-                    sim: selectedSim.phoneNumber,
-                    simCallNumber: selectedSim.phoneNumber,
-                    iccid: selectedSim.iccid
-                  }
-                : {})
-            }
-          : e
-      )
-    );
-    if (selectedSim) {
-      setSimCards((prev) =>
-        prev.map((s) =>
-          s.id === selectedSim.id
-            ? { ...s, equipmentId: stockToAssign.id, client: `${r.name}_Stock`, reseller: r.name }
-            : s
+
+    if (assignMode === 'client') {
+      const c = clients.find((x) => x.name === assignClientName);
+      if (!c) return;
+      const limit = c.vehicleLimit;
+      const installed = installedCountByClient.get(c.name) ?? 0;
+      if (typeof limit === 'number' && installed >= limit) {
+        setAssignError(`Limite atteinte: ${installed}/${limit}.`);
+        return;
+      }
+      const selectedSim = assignSimId != null ? simCards.find((s) => s.id === assignSimId) : undefined;
+      setEquipments((prev) =>
+        prev.map((e) =>
+          e.id === stockToAssign.id
+            ? {
+                ...e,
+                client: c.name,
+                reseller: c.reseller,
+                car: 'Unassigned',
+                isInstalled: false,
+                packId: e.packId ?? c.packs?.[0]?.packId,
+                ...(selectedSim
+                  ? {
+                      sim: selectedSim.phoneNumber,
+                      simCallNumber: selectedSim.phoneNumber,
+                      iccid: selectedSim.iccid
+                    }
+                  : {})
+              }
+            : e
         )
       );
+      if (selectedSim) {
+        setSimCards((prev) =>
+          prev.map((s) =>
+            s.id === selectedSim.id
+              ? { ...s, equipmentId: stockToAssign.id, client: c.name, reseller: c.reseller }
+              : s
+          )
+        );
+      }
+    } else {
+      if (!isTunavUser) return;
+      const r = clients.find((x) => x.type === 'Revendeur' && x.name === assignResellerName);
+      if (!r) return;
+      const selectedSim = assignSimId != null ? simCards.find((s) => s.id === assignSimId) : undefined;
+      setEquipments((prev) =>
+        prev.map((e) =>
+          e.id === stockToAssign.id
+            ? {
+                ...e,
+                reseller: r.name,
+                client: `${r.name}_Stock`,
+                car: 'Unassigned',
+                isInstalled: false,
+                ...(selectedSim
+                  ? {
+                      sim: selectedSim.phoneNumber,
+                      simCallNumber: selectedSim.phoneNumber,
+                      iccid: selectedSim.iccid
+                    }
+                  : {})
+              }
+            : e
+        )
+      );
+      if (selectedSim) {
+        setSimCards((prev) =>
+          prev.map((s) =>
+            s.id === selectedSim.id
+              ? { ...s, equipmentId: stockToAssign.id, client: `${r.name}_Stock`, reseller: r.name }
+              : s
+          )
+        );
+      }
     }
-    setIsAssignResellerOpen(false);
+    setIsAssignOpen(false);
   };
 
   const openAddStock = () => {
@@ -474,9 +564,12 @@ export function EquipmentsPage() {
 
   return (
     <div className="space-y-6 pb-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Gestion des Équipements</h1>
-        {activeTab === 'stock' && currentUserRole === 'Tunav' && (
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Gestion des Équipements</h1>
+          <p className="text-sm text-slate-500 mt-1">Vue unifiée des équipements, affectations et stock.</p>
+        </div>
+        {isTunavUser && (
           <button
             onClick={openAddStock}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
@@ -488,222 +581,60 @@ export function EquipmentsPage() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-          <div className="text-xs text-slate-500 uppercase font-medium">
-            Stock {currentUserRole === 'Tunav' ? 'Tunav' : currentUserName}
-          </div>
-          <div className="text-2xl font-semibold text-slate-900 mt-1">{stockEquipments.length}</div>
-        </div>
-        <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-          <div className="text-xs text-slate-500 uppercase font-medium">Installés</div>
-          <div className="text-2xl font-semibold text-emerald-600 mt-1">{totalInstalled}</div>
-        </div>
-        <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-          <div className="text-xs text-slate-500 uppercase font-medium">Non installés</div>
-          <div className="text-2xl font-semibold text-amber-600 mt-1">{totalNotInstalled}</div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Total équipements" value={stats.total.toString()} subtitle="Dans votre périmètre" icon={Cpu} />
+        <StatCard
+          title="Installés"
+          value={stats.installed.toString()}
+          trend={`${stats.total ? Math.round((stats.installed / stats.total) * 100) : 0}%`}
+          trendUp
+          subtitle="En service"
+          icon={CheckCircle2}
+        />
+        <StatCard
+          title="Non installés"
+          value={stats.notInstalled.toString()}
+          trendUp={false}
+          subtitle="Affectés non installés"
+          icon={XCircle}
+          color="red"
+        />
+        <StatCard title="Stock Tunav" value={stats.stock.toString()} subtitle="En stock" icon={Boxes} />
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-        <div className="p-2 border-b border-slate-100 bg-slate-50/50 flex gap-2">
-          <button
-            onClick={() => setActiveTab('clients')}
-            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'clients' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-white'
-            }`}
-          >
-            <span className="inline-flex items-center gap-2">
-              <ArrowLeftRight size={16} /> Affectation Clients
-            </span>
-          </button>
-          {isTunavUser && (
-            <button
-              onClick={() => setActiveTab('resellers')}
-              className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                activeTab === 'resellers' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-white'
-              }`}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Store size={16} /> Affectation Revendeur
-              </span>
-            </button>
-          )}
-          <button
-            onClick={() => setActiveTab('stock')}
-            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'stock' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-white'
-            }`}
-          >
-            <span className="inline-flex items-center gap-2">
-              <Boxes size={16} /> Stock équipements
-            </span>
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          {activeTab === 'clients' && (
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-                  <th className="p-4 font-medium">Client</th>
-                  <th className="p-4 font-medium">Installation</th>
-                  <th className="p-4 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm divide-y divide-slate-50">
-                {(() => {
-                  // Règle d’affichage:
-                  // - On n’affiche QUE les clients simples du user courant
-                  //   (les revendeurs sont gérés dans l’onglet "Affectation Revendeur")
-                  const visibleClients = clients
-                    .filter((c) => !c.name.endsWith('_Stock') && c.name !== 'Tunav')
-                    .filter((c) => c.reseller === currentUserName)
-                    .filter((c) => c.type === 'Simple')
-                    .sort((a, b) => a.name.localeCompare(b.name));
-
-                  const rows: React.ReactNode[] = [];
-
-                  for (const c of visibleClients) {
-                    const installed = installedCountByClient.get(c.name) ?? 0;
-                    const total = equipments.filter((e) => e.client === c.name).length;
-                    rows.push(
-                      <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-4">
-                          <div className="font-medium text-slate-900">{c.name}</div>
-                        </td>
-                        <td className="p-4">
-                          <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                            {`${installed}/${total}`}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => openClientEquipments(c)}
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                              title="Voir équipements"
-                            >
-                              <Eye size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-                  return rows;
-                })()}
-              </tbody>
-            </table>
-          )}
-
-          {activeTab === 'stock' && (
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-                  <th className="p-4 font-medium">N° série</th>
-                  <th className="p-4 font-medium">Type</th>
-                  <th className="p-4 font-medium">SIM</th>
-                  <th className="p-4 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm divide-y divide-slate-50">
-                {stockEquipments.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-4 font-medium text-slate-900">{e.serial}</td>
-                    <td className="p-4 text-slate-700">{e.type}</td>
-                    <td className="p-4 text-slate-600">{e.sim}</td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openAssignToClient(e)}
-                          className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-                        >
-                          Affecter client
-                        </button>
-                        {currentUserRole === 'Tunav' && (
-                          <button
-                            onClick={() => openAssignToReseller(e)}
-                            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            Affecter revendeur
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {stockEquipments.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="p-8 text-center text-slate-500">
-                      Aucun équipement en stock.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-
-          {activeTab === 'resellers' && isTunavUser && (
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-                  <th className="p-4 font-medium">Revendeur</th>
-                  <th className="p-4 font-medium">Contact</th>
-                  <th className="p-4 font-medium">Total équipements</th>
-                  <th className="p-4 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm divide-y divide-slate-50">
-                {resellersList.map((r) => {
-                  const stats = resellerStatsByName.get(r.name) ?? {
-                    total: 0,
-                    inStock: 0,
-                    assigned: 0,
-                    installed: 0
-                  };
-                  return (
-                    <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4">
-                        <div className="font-medium text-slate-900">{r.name}</div>
-                        <div className="text-xs text-slate-500">
-                          Stock: <span className="font-medium">{r.name}_Stock</span>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-slate-900 text-sm">{r.email}</div>
-                        <div className="text-slate-500 text-xs">{r.tel}</div>
-                      </td>
-                      <td className="p-4">
-                        <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                          {stats.total}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right">
-                        <button
-                          onClick={() => openResellerEquipments(r)}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                          title="Voir les équipements affectés à ce revendeur"
-                        >
-                          <Eye size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {resellersList.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="p-8 text-center text-slate-500">
-                      Aucun revendeur rattaché à Tunav.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      <EquipmentsUnifiedTable
+        rows={filteredEquipments}
+        equipmentTypes={equipmentTypes}
+        packs={packs}
+        clients={clients}
+        simOfferById={simOfferById}
+        simByEquipmentId={simByEquipmentId}
+        packById={packById}
+        isTunavUser={isTunavUser}
+        filterEquipmentType={filterEquipmentType}
+        setFilterEquipmentType={setFilterEquipmentType}
+        filterClientReseller={filterClientReseller}
+        setFilterClientReseller={setFilterClientReseller}
+        filterPack={filterPack}
+        setFilterPack={setFilterPack}
+        filterStatus={filterStatus}
+        setFilterStatus={setFilterStatus}
+        clientResellerFilterOptions={clientResellerFilterOptions}
+        getEquipmentStatus={getEquipmentStatus}
+        isStockEquipment={isStockEquipment}
+        onEdit={openEditEquipment}
+        onDelete={setEquipmentToDelete}
+        onViewDetails={(eq) => {
+          setEquipmentToView(eq);
+          setShowPositionMap(false);
+          setIsDetailsModalOpen(true);
+        }}
+        onInstall={openInstallModal}
+        onUninstall={uninstallEquipment}
+        onAssignClient={(eq) => openAssign(eq, 'client')}
+        onAssignReseller={(eq) => openAssign(eq, 'reseller')}
+        onReturnToStock={(eq) => cancelAssignmentToTunavStock(eq.id)}
+      />
 
       {/* Quotas modal (placeholder write path) */}
       <Modal
@@ -756,271 +687,16 @@ export function EquipmentsPage() {
         </div>
       </Modal>
 
-      {/* Equipments list modal */}
-      <Modal
-        isOpen={isClientEquipmentsOpen}
-        onClose={() => setIsClientEquipmentsOpen(false)}
-        title={`Équipements — ${clientToView?.name ?? ''}`}
-        size="xl"
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-                <th className="p-4 font-medium">Type équipement</th>
-                <th className="p-4 font-medium">Pack</th>
-                <th className="p-4 font-medium">Matricule</th>
-                <th className="p-4 font-medium">Carte SIM</th>
-                <th className="p-4 font-medium">Statut</th>
-                <th className="p-4 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-sm divide-y divide-slate-50">
-              {clientEquipments.map((eq) => (
-                <tr key={eq.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-4">
-                    <div className="font-medium text-slate-900">{eq.type}</div>
-                    <div className="text-xs text-slate-500">{eq.serial}</div>
-                  </td>
-                  <td className="p-4">
-                    {(() => {
-                      const pack = typeof eq.packId === 'number' ? packById.get(eq.packId) : undefined;
-                      return pack ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                          {pack.name}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400 italic">—</span>
-                      );
-                    })()}
-                  </td>
-                  <td className="p-4 text-slate-700">{eq.car}</td>
-                  <td className="p-4 text-slate-700">{eq.sim}</td>
-                  <td className="p-4">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${
-                        eq.isInstalled
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}
-                    >
-                      {eq.isInstalled ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                      {eq.isInstalled ? 'Installé' : 'Non installé'}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => openEditEquipment(eq)}
-                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                        title="Modifier"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => openEditEquipmentPack(eq)}
-                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-                        title="Modifier le pack sélectionné"
-                        disabled={!clientToView || (clientToView?.packs?.length ?? 0) === 0}
-                      >
-                        <Settings size={16} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEquipmentToView(eq);
-                          setShowPositionMap(false);
-                          setIsDetailsModalOpen(true);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                        title="Voir détailler"
-                      >
-                        <Eye size={16} />
-                      </button>
-                      <button
-                        onClick={() => cancelAssignmentToTunavStock(eq.id)}
-                        className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
-                        title="Annuler l’affectation (retour stock Tunav)"
-                      >
-                        <Undo2 size={16} />
-                      </button>
-                      {!eq.isInstalled && (
-                        <button
-                          onClick={() => openInstallModal(eq)}
-                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-                          title="Installer équipement"
-                        >
-                          <CheckCircle2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {clientEquipments.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500">
-                    Aucun équipement pour ce client.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Modal>
-
-      {/* Edit pack selection for equipment */}
-      <Modal
-        isOpen={isEditPackModalOpen}
-        onClose={() => setIsEditPackModalOpen(false)}
-        title={`Pack — ${equipmentToEditPack?.serial ?? ''}`}
-        size="md"
-      >
-        <div className="space-y-4">
-          <div className="text-sm text-slate-700">
-            Choisissez le pack de cet équipement. Un équipement appartient à <strong>un seul</strong> pack.
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Pack</label>
-            <select
-              value={selectedEquipmentPackId ?? ''}
-              onChange={(e) => setSelectedEquipmentPackId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-            >
-              <option value="">Sélectionner…</option>
-              {['FleetIQ Secure', 'FleetIQ Pro', 'FleetIQ Mechanic', 'FleetIQ Vision'].map((packName) => {
-                const p = packs.find((x) => x.name === packName);
-                if (!p) return null;
-                return (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <button
-              onClick={() => setIsEditPackModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={saveEquipmentPack}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-              disabled={selectedEquipmentPackId == null}
-            >
-              Enregistrer
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Reseller equipments list modal (TUNAV only) */}
-      <Modal
-        isOpen={isResellerEquipmentsOpen}
-        onClose={() => setIsResellerEquipmentsOpen(false)}
-        title={`Équipements affectés — ${resellerToView?.name ?? ''}`}
-        size="xl"
-      >
-        {resellerToView && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              {(() => {
-                const stats = resellerStatsByName.get(resellerToView.name) ?? {
-                  total: 0,
-                  inStock: 0,
-                  assigned: 0,
-                  installed: 0
-                };
-                return (
-                  <>
-                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                      <div className="text-[11px] text-blue-700 font-medium uppercase tracking-wide">
-                        En stock revendeur
-                      </div>
-                      <div className="text-xl font-semibold text-blue-700 mt-0.5">{stats.inStock}</div>
-                    </div>
-                    <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
-                      <div className="text-[11px] text-emerald-700 font-medium uppercase tracking-wide">
-                        Affectés à ses clients
-                      </div>
-                      <div className="text-xl font-semibold text-emerald-700 mt-0.5">{stats.assigned}</div>
-                    </div>
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                      <div className="text-[11px] text-slate-600 font-medium uppercase tracking-wide">Total</div>
-                      <div className="text-xl font-semibold text-slate-900 mt-0.5">{stats.total}</div>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-
-            <div className="overflow-x-auto border border-slate-200 rounded-lg">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
-                    <th className="p-3 font-medium">N° série</th>
-                    <th className="p-3 font-medium">Type</th>
-                    <th className="p-3 font-medium">SIM</th>
-                    <th className="p-3 font-medium">Affectation</th>
-                    <th className="p-3 font-medium">Statut</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm divide-y divide-slate-50">
-                  {resellerEquipments.map((eq) => {
-                    const isInResellerStock = eq.client === `${resellerToView.name}_Stock`;
-                    return (
-                      <tr key={eq.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-3 font-medium text-slate-900">{eq.serial}</td>
-                        <td className="p-3 text-slate-700">{eq.type}</td>
-                        <td className="p-3 text-slate-600">{eq.sim}</td>
-                        <td className="p-3">
-                          {isInResellerStock ? (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                              <Boxes size={12} /> Stock revendeur
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
-                              <ArrowLeftRight size={12} /> {eq.client}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium ${
-                              eq.isInstalled
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}
-                          >
-                            {eq.isInstalled ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                            {eq.isInstalled ? 'Installé' : 'Non installé'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {resellerEquipments.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-500">
-                        Aucun équipement affecté à ce revendeur.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="text-xs text-slate-500 italic">
-              Conformément à votre politique, les clients de ce revendeur ne sont pas listés ici.
-            </div>
-          </div>
-        )}
-      </Modal>
-
       {/* Edit equipment popup */}
-      <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Modifier l'équipement" size="lg">
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditSimId(null);
+          setEditSimSearch('');
+        }}
+        title="Modifier l'équipement"
+        size="lg">
         <div className="space-y-6">
           <div>
             <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100">
@@ -1053,7 +729,7 @@ export function EquipmentsPage() {
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série (IMEI)</label>
                 <input
                   value={equipmentToEdit?.serial ?? ''}
                   onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, serial: e.target.value }))}
@@ -1061,28 +737,91 @@ export function EquipmentsPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Carte SIM</label>
-                <input
-                  value={equipmentToEdit?.sim ?? ''}
-                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, sim: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                />
+                <label className="block text-xs font-medium text-slate-600 mb-1">Pack</label>
+                <select
+                  value={equipmentToEdit?.packId ?? ''}
+                  onChange={(e) =>
+                    setEquipmentToEdit((p: any) => ({
+                      ...p,
+                      packId: e.target.value ? Number(e.target.value) : undefined
+                    }))
+                  }
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+                >
+                  <option value="">— Aucun pack —</option>
+                  {packs.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">N° d'appel puce</label>
-                <input
-                  value={equipmentToEdit?.simCallNumber ?? ''}
-                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, simCallNumber: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">N° de série puce (ICCID)</label>
-                <input
-                  value={equipmentToEdit?.iccid ?? ''}
-                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, iccid: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                />
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  N° de série puce (ICCID)
+                </label>
+                <div className="relative">
+                  <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={14}
+                  />
+                  <input
+                    type="text"
+                    value={editSimSearch}
+                    onChange={(e) => setEditSimSearch(e.target.value)}
+                    placeholder="Rechercher un ICCID…"
+                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                </div>
+                {editSimId != null && (
+                  <div className="mt-2 flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
+                    <span className="font-medium text-blue-800 break-all">
+                      {simCards.find((s) => s.id === editSimId)?.iccid}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditSimId(null);
+                        setEditSimSearch('');
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 shrink-0"
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                )}
+                <div className="mt-2 max-h-44 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100 bg-white shadow-sm">
+                  {editAvailableSims.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-sm text-slate-400">
+                      Aucune puce disponible pour cet équipement.
+                    </div>
+                  ) : filteredEditSims.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-sm text-slate-400">
+                      Aucun ICCID ne correspond à la recherche.
+                    </div>
+                  ) : (
+                    filteredEditSims.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setEditSimId(s.id);
+                          setEditSimSearch(s.iccid);
+                        }}
+                        className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center justify-between gap-2 ${
+                          editSimId === s.id
+                            ? 'bg-blue-50 text-blue-800'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="font-medium break-all">{s.iccid}</span>
+                        {editSimId === s.id && (
+                          <Check size={14} className="text-blue-600 shrink-0" />
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1504,40 +1243,76 @@ export function EquipmentsPage() {
         )}
       </Modal>
 
-      {/* Assign stock to client */}
-      <Modal isOpen={isAssignClientOpen} onClose={() => setIsAssignClientOpen(false)} title="Affectation Clients" size="md">
+      {/* Affectation client ou revendeur */}
+      <Modal
+        isOpen={isAssignOpen}
+        onClose={() => setIsAssignOpen(false)}
+        title={assignMode === 'client' ? 'Affectation — Client' : 'Affectation — Revendeur'}
+        size="md"
+      >
         <div className="space-y-4">
           <div className="text-sm text-slate-700">
             Équipement: <strong>{stockToAssign?.serial}</strong>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
-            <select
-              value={assignClientName}
-              onChange={(e) => {
-                setAssignClientName(e.target.value);
-                setAssignSimId(null);
-              }}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            >
-              <option value="">Sélectionner…</option>
-              {clients
-                .filter((c) => !c.name.endsWith('_Stock'))
-                .filter((c) => c.name !== 'Tunav')
-                .filter((c) => c.type !== 'Revendeur')
-                .filter((c) => c.reseller === currentUserName)
-                .map((c) => (
+          {assignMode === 'client' ? (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
+              <select
+                value={assignClientName}
+                onChange={(e) => {
+                  setAssignClientName(e.target.value);
+                  setAssignSimId(null);
+                }}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              >
+                <option value="">Sélectionner…</option>
+                {clients
+                  .filter((c) => !c.name.endsWith('_Stock'))
+                  .filter((c) => c.name !== 'Tunav')
+                  .filter((c) => c.type !== 'Revendeur')
+                  .filter((c) => c.reseller === currentUserName)
+                  .map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Revendeur</label>
+              <select
+                value={assignResellerName}
+                onChange={(e) => {
+                  setAssignResellerName(e.target.value);
+                  setAssignSimId(null);
+                }}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              >
+                <option value="">Sélectionner…</option>
+                {resellersList.map((c) => (
                   <option key={c.id} value={c.name}>
                     {c.name}
                   </option>
                 ))}
-            </select>
-          </div>
+              </select>
+            </div>
+          )}
 
-          {assignClientName && (() => {
-            const clientSims = simCards.filter(
-              (s) => s.client === assignClientName && s.equipmentId == null
-            );
+          {((assignMode === 'client' && assignClientName) ||
+            (assignMode === 'reseller' && assignResellerName)) &&
+            (() => {
+            const clientSims =
+              assignMode === 'client'
+                ? simCards.filter((s) => s.client === assignClientName && s.equipmentId == null)
+                : (() => {
+                    const stockName = `${assignResellerName}_Stock`;
+                    return simCards.filter(
+                      (s) =>
+                        s.equipmentId == null &&
+                        (s.client === stockName || s.reseller === assignResellerName)
+                    );
+                  })();
             return (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1546,7 +1321,7 @@ export function EquipmentsPage() {
                 </label>
                 {clientSims.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm">
-                    Aucune puce disponible pour ce client. Vous pouvez en affecter une depuis « Gestion des puces ».
+                    Aucune puce disponible{assignMode === 'client' ? ' pour ce client' : ' pour ce revendeur'}. Ajoutez-en depuis « Gestion des puces ».
                   </div>
                 ) : (
                   <select
@@ -1601,15 +1376,15 @@ export function EquipmentsPage() {
           {assignError && <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{assignError}</div>}
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
-              onClick={() => setIsAssignClientOpen(false)}
+              onClick={() => setIsAssignOpen(false)}
               className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
             >
               Annuler
             </button>
             <button
-              onClick={confirmAssignToClient}
+              onClick={confirmAssign}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-              disabled={!assignClientName}
+              disabled={assignMode === 'client' ? !assignClientName : !assignResellerName}
             >
               Confirmer
             </button>
@@ -1617,119 +1392,33 @@ export function EquipmentsPage() {
         </div>
       </Modal>
 
-      {/* Assign stock to reseller */}
+      {/* Supprimer équipement */}
       <Modal
-        isOpen={isAssignResellerOpen}
-        onClose={() => setIsAssignResellerOpen(false)}
-        title="Affectation Revendeur"
+        isOpen={equipmentToDelete !== null}
+        onClose={() => setEquipmentToDelete(null)}
+        title="Supprimer l'équipement"
         size="md"
       >
         <div className="space-y-4">
-          <div className="text-sm text-slate-700">
-            Équipement: <strong>{stockToAssign?.serial}</strong>
+          <div className="bg-red-50 text-red-800 p-3 rounded-lg text-sm flex items-start gap-3">
+            <AlertCircle className="shrink-0 mt-0.5" size={16} />
+            <p>
+              Supprimer définitivement l'équipement <strong>{equipmentToDelete?.serial}</strong> ?
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Revendeur</label>
-            <select
-              value={assignResellerName}
-              onChange={(e) => {
-                setAssignResellerName(e.target.value);
-                setAssignResellerSimId(null);
-              }}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            >
-              <option value="">Sélectionner…</option>
-              {clients
-                .filter((c) => c.type === 'Revendeur')
-                .filter((c) => c.name !== 'Tunav')
-                .map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          {assignResellerName && (() => {
-            const stockName = `${assignResellerName}_Stock`;
-            const resellerSims = simCards.filter(
-              (s) =>
-                s.equipmentId == null &&
-                (s.client === stockName || s.reseller === assignResellerName)
-            );
-            return (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  N° de série puce (ICCID){' '}
-                  <span className="text-[11px] text-slate-500 font-normal">— optionnel</span>
-                </label>
-                {resellerSims.length === 0 ? (
-                  <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm">
-                    Aucune puce disponible pour ce revendeur. Vous pouvez en affecter une depuis « Gestion des puces ».
-                  </div>
-                ) : (
-                  <select
-                    value={assignResellerSimId ?? ''}
-                    onChange={(e) => setAssignResellerSimId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-                  >
-                    <option value="">— Aucune puce —</option>
-                    {resellerSims.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.iccid || '(sans ICCID)'}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                {assignResellerSimId != null && (() => {
-                  const selectedSim = simCards.find((s) => s.id === assignResellerSimId);
-                  if (!selectedSim) return null;
-                  const offer = selectedSim.offerId != null ? simOfferById.get(selectedSim.offerId) : undefined;
-                  return (
-                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">N° de série puce (ICCID)</div>
-                        <div className="font-medium text-slate-900 break-all">{selectedSim.iccid || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">Carte SIM</div>
-                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">N° d'appel puce</div>
-                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">Opérateur</div>
-                        <div className="font-medium text-slate-900">{offer?.operator || '—'}</div>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <div className="text-[11px] uppercase text-slate-500">Offre puce</div>
-                        <div className="font-medium text-slate-900">
-                          {offer ? `${offer.name} — ${offer.pricePerSim.toFixed(2)} TND / puce` : '—'}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            );
-          })()}
-
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
-              onClick={() => setIsAssignResellerOpen(false)}
+              onClick={() => setEquipmentToDelete(null)}
               className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
             >
               Annuler
             </button>
             <button
-              onClick={confirmAssignToReseller}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-              disabled={!assignResellerName}
+              onClick={confirmDeleteEquipment}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors shadow-sm inline-flex items-center gap-2"
             >
-              Confirmer
+              <Trash2 size={16} />
+              Supprimer
             </button>
           </div>
         </div>
@@ -1769,7 +1458,7 @@ export function EquipmentsPage() {
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série (IMEI)</label>
                 <input
                   value={newStock.serial}
                   onChange={(e) => setNewStock((p) => ({ ...p, serial: e.target.value }))}
@@ -1778,8 +1467,7 @@ export function EquipmentsPage() {
               </div>
             </div>
             <p className="text-[11px] text-slate-500 mt-2">
-              La puce SIM (ICCID, n° d'appel...) sera associée à l'équipement lors de l'affectation à un client ou à
-              un revendeur depuis l'onglet correspondant.
+              La puce SIM sera associée lors de l'affectation à un client ou à un revendeur depuis le tableau.
             </p>
           </div>
 

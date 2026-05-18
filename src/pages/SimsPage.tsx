@@ -15,7 +15,8 @@ import {
   Package,
   Link2,
   Unlink,
-  ArrowLeftRight
+  ArrowLeftRight,
+  X
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
@@ -182,10 +183,29 @@ export function SimsPage() {
   const [offerError, setOfferError] = useState<string | null>(null);
   const [isOffersListOpen, setIsOffersListOpen] = useState(false);
 
-  // --- Assign-to-client modal ---
+  // --- Selection & assign-to-client ---
+  const [selectedSimIds, setSelectedSimIds] = useState<Set<number>>(new Set());
   const [isAssignOpen, setIsAssignOpen] = useState(false);
-  const [simToAssign, setSimToAssign] = useState<SimCard | null>(null);
+  const [assignSimIds, setAssignSimIds] = useState<number[]>([]);
   const [assignClientName, setAssignClientName] = useState<string>('');
+
+  const isSimSelectable = (sim: SimCard) => getSimStatus(sim) !== 'assigned_equipment';
+
+  const selectableFilteredSims = useMemo(
+    () => filteredSims.filter(isSimSelectable),
+    [filteredSims]
+  );
+
+  const allSelectableSelected =
+    selectableFilteredSims.length > 0 &&
+    selectableFilteredSims.every((s) => selectedSimIds.has(s.id));
+
+  const someSelectableSelected = selectableFilteredSims.some((s) => selectedSimIds.has(s.id));
+
+  const assignSimsPreview = useMemo(
+    () => assignSimIds.map((id) => visibleSims.find((s) => s.id === id)).filter(Boolean) as SimCard[],
+    [assignSimIds, visibleSims]
+  );
 
   // --- Delete confirm modal ---
   const [simToDelete, setSimToDelete] = useState<SimCard | null>(null);
@@ -321,25 +341,65 @@ export function SimsPage() {
     setSimCards((prev) => prev.map((s) => (s.offerId === offerId ? { ...s, offerId: null } : s)));
   };
 
+  const toggleSimSelection = (simId: number) => {
+    setSelectedSimIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(simId)) next.delete(simId);
+      else next.add(simId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = () => {
+    if (allSelectableSelected) {
+      setSelectedSimIds((prev) => {
+        const next = new Set(prev);
+        for (const s of selectableFilteredSims) next.delete(s.id);
+        return next;
+      });
+    } else {
+      setSelectedSimIds((prev) => {
+        const next = new Set(prev);
+        for (const s of selectableFilteredSims) next.add(s.id);
+        return next;
+      });
+    }
+  };
+
+  const clearSelection = () => setSelectedSimIds(new Set());
+
+  const closeAssignModal = () => {
+    setIsAssignOpen(false);
+    setAssignSimIds([]);
+    setAssignClientName('');
+  };
+
   const openAssignToClient = (sim: SimCard) => {
-    setSimToAssign(sim);
+    setAssignSimIds([sim.id]);
     setAssignClientName(sim.client.endsWith('_Stock') ? '' : sim.client);
     setIsAssignOpen(true);
   };
 
+  const openBulkAssignToClient = () => {
+    const ids = Array.from(selectedSimIds);
+    if (ids.length === 0) return;
+    setAssignSimIds(ids);
+    setAssignClientName('');
+    setIsAssignOpen(true);
+  };
+
   const confirmAssignToClient = () => {
-    if (!simToAssign) return;
-    if (!assignClientName) return;
+    if (assignSimIds.length === 0 || !assignClientName) return;
     const client = clients.find((c) => c.name === assignClientName);
     if (!client) return;
+    const idSet = new Set(assignSimIds);
     setSimCards((prev) =>
       prev.map((s) =>
-        s.id === simToAssign.id
-          ? { ...s, client: client.name, reseller: client.reseller }
-          : s
+        idSet.has(s.id) ? { ...s, client: client.name, reseller: client.reseller } : s
       )
     );
-    setIsAssignOpen(false);
+    closeAssignModal();
+    clearSelection();
   };
 
   const unassignSim = (sim: SimCard) => {
@@ -547,10 +607,54 @@ export function SimsPage() {
           </div>
         </div>
 
+        {selectedSimIds.size > 0 && (
+          <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-blue-900">
+              <span className="inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 rounded-full bg-blue-600 text-white text-xs font-semibold">
+                {selectedSimIds.size}
+              </span>
+              <span className="font-medium">
+                puce{selectedSimIds.size > 1 ? 's' : ''} sélectionnée{selectedSimIds.size > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                <X size={14} />
+                Tout désélectionner
+              </button>
+              <button
+                type="button"
+                onClick={openBulkAssignToClient}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                <ArrowLeftRight size={14} />
+                Affecter au client
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
+                <th className="p-4 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allSelectableSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someSelectableSelected && !allSelectableSelected;
+                    }}
+                    onChange={toggleSelectAllFiltered}
+                    disabled={selectableFilteredSims.length === 0}
+                    title="Tout sélectionner (puces affectables)"
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
                 <th className="p-4 font-medium">Numéro puce / CCID</th>
                 <th className="p-4 font-medium">Opérateur</th>
                 <th className="p-4 font-medium">Client</th>
@@ -566,9 +670,28 @@ export function SimsPage() {
                 const equipment = sim.equipmentId != null ? equipmentById.get(sim.equipmentId) : undefined;
                 const isStock = sim.client.endsWith('_Stock');
                 const meta = STATUS_META[status];
+                const selectable = isSimSelectable(sim);
+                const isSelected = selectedSimIds.has(sim.id);
 
                 return (
-                  <tr key={sim.id} className="hover:bg-slate-50 transition-colors">
+                  <tr
+                    key={sim.id}
+                    className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/60' : ''}`}
+                  >
+                    <td className="p-4 w-10">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={!selectable}
+                        onChange={() => toggleSimSelection(sim.id)}
+                        title={
+                          selectable
+                            ? 'Sélectionner pour affectation groupée'
+                            : 'Non sélectionnable (affectée à un équipement)'
+                        }
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+                      />
+                    </td>
                     <td className="p-4">
                       <div className="flex flex-col gap-0.5">
                         {sim.phoneNumber ? (
@@ -670,7 +793,7 @@ export function SimsPage() {
               })}
               {filteredSims.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500">
+                  <td colSpan={7} className="p-8 text-center text-slate-500">
                     Aucune puce trouvée.
                   </td>
                 </tr>
@@ -937,40 +1060,52 @@ export function SimsPage() {
       {/* --- ASSIGN-TO-CLIENT MODAL --- */}
       <Modal
         isOpen={isAssignOpen}
-        onClose={() => setIsAssignOpen(false)}
-        title="Affecter la puce à un client"
+        onClose={closeAssignModal}
+        title={
+          assignSimIds.length > 1
+            ? `Affecter ${assignSimIds.length} puces à un client`
+            : 'Affecter la puce à un client'
+        }
         size="md"
       >
         <div className="space-y-4">
           <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-3">
             <ArrowLeftRight className="shrink-0 mt-0.5" size={16} />
             <p>
-              Sélectionnez le client auquel affecter cette puce. La puce sortira du stock et pourra ensuite être
-              associée à un équipement.
+              {assignSimIds.length > 1
+                ? `Sélectionnez le client auquel affecter les ${assignSimIds.length} puces. Elles sortiront du stock et pourront ensuite être associées à des équipements.`
+                : 'Sélectionnez le client auquel affecter cette puce. La puce sortira du stock et pourra ensuite être associée à un équipement.'}
             </p>
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm flex flex-col gap-1">
-            {simToAssign?.phoneNumber && (
-              <div>
-                <span className="text-slate-500">Numéro puce&nbsp;:</span>{' '}
-                <strong>{simToAssign.phoneNumber}</strong>
-              </div>
-            )}
-            {simToAssign?.iccid && (
-              <div>
-                <span className="text-slate-500">ICCID&nbsp;:</span> <strong>{simToAssign.iccid}</strong>
-              </div>
-            )}
-            {(() => {
-              const offer = simToAssign?.offerId != null ? offerById.get(simToAssign.offerId) : undefined;
-              if (!offer) return null;
-              return (
-                <div>
-                  <span className="text-slate-500">Opérateur&nbsp;:</span> <strong>{offer.operator}</strong>
-                </div>
-              );
-            })()}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
+              {assignSimsPreview.length > 1 ? 'Puces sélectionnées' : 'Puce sélectionnée'}
+            </p>
+            <ul className="max-h-40 overflow-y-auto divide-y divide-slate-200">
+              {assignSimsPreview.map((sim) => {
+                const offer = sim.offerId != null ? offerById.get(sim.offerId) : undefined;
+                return (
+                  <li key={sim.id} className="py-2 first:pt-0 last:pb-0 flex flex-col gap-0.5">
+                    {sim.phoneNumber ? (
+                      <span className="font-medium text-slate-900">{sim.phoneNumber}</span>
+                    ) : (
+                      <span className="text-slate-400 italic text-xs">Pas de numéro</span>
+                    )}
+                    {sim.iccid && (
+                      <span className="text-[11px] text-slate-500">
+                        ICCID&nbsp;: <strong>{sim.iccid}</strong>
+                      </span>
+                    )}
+                    {offer && (
+                      <span className="text-[11px] text-slate-500">
+                        {offer.name} · {offer.operator}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
 
           <div>
@@ -985,7 +1120,7 @@ export function SimsPage() {
 
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <button
-              onClick={() => setIsAssignOpen(false)}
+              onClick={closeAssignModal}
               className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
             >
               Annuler
@@ -995,7 +1130,7 @@ export function SimsPage() {
               disabled={!assignClientName}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:bg-slate-300 disabled:cursor-not-allowed"
             >
-              Affecter
+              {assignSimIds.length > 1 ? `Affecter ${assignSimIds.length} puces` : 'Affecter'}
             </button>
           </div>
         </div>

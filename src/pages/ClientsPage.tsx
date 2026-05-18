@@ -40,7 +40,13 @@ import {
 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
-import { useFleetStore } from '../state/FleetStore';
+import { PeriodKey } from '../components/PeriodFilter';
+import { ClientsFilterBar } from '../components/ClientsFilterBar';
+import { useFleetStore, type FleetClient } from '../state/FleetStore';
+import {
+  getVisibleClients,
+  getVisibleEquipments
+} from '../utils/fleetVisibility';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -55,6 +61,70 @@ const customMarkerIcon = new L.Icon({
   popupAnchor: [1, -34],
   shadowSize: [41, 41]
 });
+
+function getPeriodRange(
+  period: PeriodKey,
+  start: string,
+  end: string
+): { from: Date; to: Date } {
+  const now = new Date();
+  const to = new Date(now);
+  to.setHours(23, 59, 59, 999);
+  let from = new Date(now);
+  from.setHours(0, 0, 0, 0);
+  switch (period) {
+    case '7d':
+      from.setDate(from.getDate() - 6);
+      break;
+    case '30d':
+      from.setDate(from.getDate() - 29);
+      break;
+    case '3m':
+      from.setMonth(from.getMonth() - 3);
+      break;
+    case 'custom':
+      if (start) from = new Date(start);
+      if (end) {
+        to.setTime(new Date(end).getTime());
+        to.setHours(23, 59, 59, 999);
+      }
+      break;
+    default:
+      break;
+  }
+  return { from, to };
+}
+
+function isDateInRange(dateStr: string, from: Date, to: Date): boolean {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return true;
+  return d >= from && d <= to;
+}
+
+function enrichClientForModal(c: FleetClient) {
+  const mock = mockClients.find((m) => m.id === c.id || m.name === c.name);
+  if (mock) {
+    return {
+      ...mock,
+      ...c,
+      vehicleLimit: c.vehicleLimit ?? mock.vehicleLimit
+    };
+  }
+  return {
+    ...c,
+    website: '',
+    formula: '',
+    abonnement: '',
+    timezone: 'UTC+1',
+    address: '',
+    tel2: '',
+    email2: '',
+    accountLimit: 10,
+    username: '',
+    password: ''
+  };
+}
+
 // --- Mock Data ---
 const mockClients = [
 {
@@ -64,7 +134,7 @@ const mockClients = [
   reseller: 'Auto Fleet Pro',
   email: 'contact@texpress.fr',
   tel: '+33 1 23 45 67 89',
-  expiry: '2025-12-31',
+  expiry: '2026-12-31',
   status: 'Active',
   website: 'www.texpress.fr',
   formula: 'Premium',
@@ -139,6 +209,90 @@ const mockClients = [
   vehicleLimit: -1,
   accountLimit: -1,
   username: 'autofleet_admin',
+  password: '••••••••'
+},
+{
+  id: 5,
+  name: 'Société Médicale ABC',
+  type: 'Simple',
+  reseller: 'Tunav',
+  email: 'contact@medicale-abc.fr',
+  tel: '+216 71 12 34 56',
+  expiry: '2026-12-31',
+  status: 'Active',
+  website: 'www.medicale-abc.fr',
+  formula: 'Standard',
+  abonnement: 'FleetIQ Pro',
+  timezone: 'UTC+1',
+  address: '15 Avenue Habib Bourguiba, Tunis',
+  tel2: '',
+  email2: '',
+  vehicleLimit: 30,
+  accountLimit: 8,
+  username: 'medicale_admin',
+  password: '••••••••'
+},
+{
+  id: 6,
+  name: 'Transport Urbain Tunis',
+  type: 'Simple',
+  reseller: 'Tunav',
+  email: 'admin@tut.tn',
+  tel: '+216 71 98 76 54',
+  expiry: '2027-06-30',
+  status: 'Active',
+  website: 'www.tut.tn',
+  formula: 'Premium',
+  abonnement: 'FleetIQ Secure',
+  timezone: 'UTC+1',
+  address: '42 Rue de la Gare, Tunis',
+  tel2: '',
+  email2: '',
+  vehicleLimit: 50,
+  accountLimit: 12,
+  username: 'tut_admin',
+  password: '••••••••'
+},
+{
+  id: 7,
+  name: 'Fret International',
+  type: 'Simple',
+  reseller: 'Tunav',
+  email: 'contact@fret-intl.tn',
+  tel: '+216 71 55 44 33',
+  expiry: '2026-08-20',
+  status: 'Active',
+  website: 'www.fret-intl.tn',
+  formula: 'Standard',
+  abonnement: 'FleetIQ Pro',
+  timezone: 'UTC+1',
+  address: 'Zone industrielle, Sfax',
+  tel2: '',
+  email2: '',
+  vehicleLimit: 40,
+  accountLimit: 10,
+  username: 'fret_admin',
+  password: '••••••••'
+},
+{
+  id: 8,
+  name: 'Distribution Nord',
+  type: 'Simple',
+  reseller: 'Tunav',
+  email: 'info@dist-nord.fr',
+  tel: '+33 3 20 11 22 33',
+  expiry: '2026-05-10',
+  status: 'Blocked',
+  website: 'www.dist-nord.fr',
+  formula: 'Standard',
+  abonnement: 'FleetIQ Mechanic',
+  timezone: 'UTC+1',
+  address: '8 Rue du Commerce, Lille',
+  tel2: '',
+  email2: '',
+  vehicleLimit: 25,
+  accountLimit: 6,
+  username: 'distnord_admin',
   password: '••••••••'
 }];
 
@@ -437,11 +591,18 @@ function InstallPlateSelect({
 
 }
 export function ClientsPage() {
-  const { currentUserRole, currentUserName } = useFleetStore();
+  const { currentUserRole, currentUserName, clients: storeClients, equipments } =
+    useFleetStore();
   const isResellerUser = currentUserRole === 'Revendeur';
+  const isTunavUser = currentUserRole === 'Tunav';
   // Main Table State
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [expiryFilterEnabled, setExpiryFilterEnabled] = useState(false);
+  const [periodFilter, setPeriodFilter] = useState<PeriodKey>('30d');
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
   // Multi-step Add/Edit Modal State
   const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(null);
@@ -660,17 +821,112 @@ export function ClientsPage() {
     setConfigDupSerial('');
     setIsConfigModalOpen(true);
   };
-  // --- Filtering ---
-  const filteredClients = mockClients
-    .filter((client) => client.reseller === currentUserName)
-    .filter((client) => (isResellerUser ? client.type === 'Simple' : true))
-    .filter((client) => {
+  const visibleEquipments = useMemo(
+    () => getVisibleEquipments(equipments, currentUserRole, currentUserName),
+    [equipments, currentUserRole, currentUserName]
+  );
+
+  const equipmentStats = useMemo(() => {
+    const simpleByClient = new Map<string, { installed: number; total: number }>();
+    const resellerTotals = new Map<string, number>();
+    for (const e of visibleEquipments) {
+      if (e.reseller) {
+        resellerTotals.set(e.reseller, (resellerTotals.get(e.reseller) ?? 0) + 1);
+      }
+      if (!e.client.endsWith('_Stock') && e.client !== 'Tunav') {
+        const cur = simpleByClient.get(e.client) ?? { installed: 0, total: 0 };
+        cur.total += 1;
+        if (e.isInstalled) cur.installed += 1;
+        simpleByClient.set(e.client, cur);
+      }
+    }
+    return { simpleByClient, resellerTotals };
+  }, [visibleEquipments]);
+
+  const visibleClients = useMemo(
+    () =>
+      getVisibleClients(
+        storeClients,
+        visibleEquipments,
+        currentUserRole,
+        currentUserName
+      ),
+    [storeClients, visibleEquipments, currentUserRole, currentUserName]
+  );
+
+  const periodRange = useMemo(
+    () => getPeriodRange(periodFilter, periodStart, periodEnd),
+    [periodFilter, periodStart, periodEnd]
+  );
+
+  const filteredClients = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return visibleClients.filter((client) => {
       const matchSearch =
-        client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        client.email.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchType = typeFilter ? client.type.toLowerCase() === typeFilter : true;
-      return matchSearch && matchType;
+        !q ||
+        client.name.toLowerCase().includes(q) ||
+        client.email.toLowerCase().includes(q);
+      const matchType = typeFilter ? client.type === typeFilter : true;
+      const matchStatus = statusFilter ? client.status === statusFilter : true;
+      const matchPeriod =
+        !expiryFilterEnabled ||
+        isDateInRange(client.expiry, periodRange.from, periodRange.to);
+      return matchSearch && matchType && matchStatus && matchPeriod;
     });
+  }, [
+    visibleClients,
+    searchQuery,
+    typeFilter,
+    statusFilter,
+    expiryFilterEnabled,
+    periodRange
+  ]);
+
+  const hasActiveFilters =
+    !!searchQuery.trim() ||
+    !!typeFilter ||
+    !!statusFilter ||
+    expiryFilterEnabled;
+
+  const activeFilterCount = [
+    searchQuery.trim(),
+    typeFilter,
+    statusFilter,
+    expiryFilterEnabled
+  ].filter(Boolean).length;
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setTypeFilter('');
+    setStatusFilter('');
+    setExpiryFilterEnabled(false);
+    setPeriodFilter('30d');
+    setPeriodStart('');
+    setPeriodEnd('');
+  };
+
+  const getEquipmentLabel = (client: FleetClient) => {
+    if (client.type === 'Revendeur') {
+      return String(equipmentStats.resellerTotals.get(client.name) ?? 0);
+    }
+    const stats = equipmentStats.simpleByClient.get(client.name);
+    if (!stats) return '0/0';
+    return `${stats.installed}/${stats.total}`;
+  };
+
+  const totalEquipmentCount = useMemo(
+    () =>
+      filteredClients.reduce((sum, c) => {
+        if (c.type === 'Revendeur') {
+          return sum + (equipmentStats.resellerTotals.get(c.name) ?? 0);
+        }
+        return sum + (equipmentStats.simpleByClient.get(c.name)?.total ?? 0);
+      }, 0),
+    [filteredClients, equipmentStats]
+  );
+
+  const activeCount = filteredClients.filter((c) => c.status === 'Active').length;
+  const blockedCount = filteredClients.filter((c) => c.status === 'Blocked').length;
   // --- Wizard Navigation ---
   const visibleSteps = useMemo(
     () => (clientType === 'Revendeur' ? STEPS.filter((s) => s.id !== 3) : STEPS),
@@ -711,64 +967,69 @@ export function ClientsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Clients"
-          value="4"
-          trend="2"
+          value={String(filteredClients.length)}
+          trend=""
           trendUp={true}
-          subtitle="Ce mois-ci"
+          subtitle="Selon filtres actifs"
           icon={Users} />
         
         <StatCard
           title="Clients Actifs"
-          value="3"
-          trend="75%"
+          value={String(activeCount)}
+          trend={
+            filteredClients.length > 0
+              ? `${Math.round((activeCount / filteredClients.length) * 100)}%`
+              : '0%'
+          }
           trendUp={true}
           subtitle="Taux d'activité"
           icon={UserCheck} />
         
         <StatCard
           title="Clients Bloqués"
-          value="1"
-          trend="25%"
+          value={String(blockedCount)}
+          trend={
+            filteredClients.length > 0
+              ? `${Math.round((blockedCount / filteredClients.length) * 100)}%`
+              : '0%'
+          }
           trendUp={false}
           subtitle="Nécessite attention"
           icon={UserX} />
         
         <StatCard
-          title="Total Véhicules"
-          value="527"
-          trend="12"
+          title="Total Équipements"
+          value={String(totalEquipmentCount)}
+          trend=""
           trendUp={true}
-          subtitle="Véhicules enregistrés"
-          icon={Car} />
+          subtitle="Clients filtrés"
+          icon={Cpu} />
         
       </div>
 
       {/* Main Table */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <div className="relative w-64">
-            <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              size={16} />
-            
-            <input
-              type="text"
-              placeholder="Rechercher un client..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-shadow" />
-            
-          </div>
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
-            
-            <option value="">Tous les types</option>
-            <option value="simple">Simple</option>
-            <option value="revendeur">Revendeur</option>
-          </select>
-        </div>
+        <ClientsFilterBar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          typeFilter={typeFilter}
+          onTypeChange={setTypeFilter}
+          statusFilter={statusFilter}
+          onStatusChange={setStatusFilter}
+          expiryFilterEnabled={expiryFilterEnabled}
+          onExpiryFilterEnabledChange={setExpiryFilterEnabled}
+          periodFilter={periodFilter}
+          onPeriodChange={setPeriodFilter}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          onPeriodStartChange={setPeriodStart}
+          onPeriodEndChange={setPeriodEnd}
+          activeFilterCount={activeFilterCount}
+          hasActiveFilters={hasActiveFilters}
+          onReset={resetFilters}
+          filteredCount={filteredClients.length}
+          totalCount={visibleClients.length}
+        />
 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -779,6 +1040,7 @@ export function ClientsPage() {
                 <th className="p-4 font-medium">Revendeur</th>
                 <th className="p-4 font-medium">Contact</th>
                 <th className="p-4 font-medium">Expiration</th>
+                <th className="p-4 font-medium">Équipements</th>
                 <th className="p-4 font-medium">Statut</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
@@ -809,6 +1071,26 @@ export function ClientsPage() {
                   </td>
                   <td className="p-4">
                     <span
+                      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium"
+                      title={
+                        client.type === 'Revendeur'
+                          ? 'Équipements affectés au revendeur'
+                          : 'Installés / total'
+                      }>
+                      <Cpu size={12} className="text-slate-400" />
+                      {getEquipmentLabel(client)}
+                    </span>
+                    {client.type === 'Simple' && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        installés / total
+                      </div>
+                    )}
+                    {client.type === 'Revendeur' && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">total affectés</div>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    <span
                     className={`flex items-center gap-1.5 text-xs font-medium ${client.status === 'Active' ? 'text-emerald-600' : 'text-red-600'}`}>
                     
                       <span
@@ -820,28 +1102,28 @@ export function ClientsPage() {
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                      onClick={() => openAddEditModal(client)}
+                      onClick={() => openAddEditModal(enrichClientForModal(client))}
                       className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
                       title="Modifier">
                       
                         <Edit2 size={16} />
                       </button>
                       <button
-                      onClick={() => openViewModal(client)}
+                      onClick={() => openViewModal(enrichClientForModal(client))}
                       className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
                       title="Voir détails">
                       
                         <Eye size={16} />
                       </button>
                       <button
-                      onClick={() => openVehiclesModal(client)}
+                      onClick={() => openVehiclesModal(enrichClientForModal(client))}
                       className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
                       title="Véhicules">
                       
                         <Car size={16} />
                       </button>
                       <button
-                      onClick={() => openPaymentModal(client)}
+                      onClick={() => openPaymentModal(enrichClientForModal(client))}
                       className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
                       title="Valider le paiement">
                       
@@ -1809,7 +2091,7 @@ export function ClientsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Numéro de série
+                    Numéro de série (IMEI)
                   </label>
                   <input
                   type="text"

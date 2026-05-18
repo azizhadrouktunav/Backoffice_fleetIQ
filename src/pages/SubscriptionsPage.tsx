@@ -531,7 +531,6 @@ export function SubscriptionsPage() {
   const [packName, setPackName] = useState('');
   const [packDescription, setPackDescription] = useState('');
   const [packColor, setPackColor] = useState<Pack['color']>('indigo');
-  const [packVehicleLimit, setPackVehicleLimit] = useState<number>(50);
   const [packEquipments, setPackEquipments] = useState<EquipmentType[]>([]);
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set());
   const [featureSearch, setFeatureSearch] = useState('');
@@ -609,7 +608,6 @@ export function SubscriptionsPage() {
     setPackName('');
     setPackDescription('');
     setPackColor('indigo');
-    setPackVehicleLimit(50);
     setPackEquipments([]);
     setSelectedFeatures(new Set());
     setFeatureSearch('');
@@ -622,7 +620,6 @@ export function SubscriptionsPage() {
     setPackName(pack.name);
     setPackDescription(pack.description);
     setPackColor(pack.color);
-    setPackVehicleLimit(pack.vehicleLimit);
     setPackEquipments(pack.supportedEquipments);
     setSelectedFeatures(new Set(pack.features));
     setFeatureSearch('');
@@ -635,11 +632,15 @@ export function SubscriptionsPage() {
     if (!name) return;
 
     const features = Array.from(selectedFeatures);
+    const preservedVehicleLimit =
+      packEditingId != null
+        ? (packs.find((p) => p.id === packEditingId)?.vehicleLimit ?? 50)
+        : 50;
     const nextPack: Omit<Pack, 'id'> = {
       name,
       description: packDescription.trim(),
       color: packColor,
-      vehicleLimit: Math.max(0, Number.isFinite(packVehicleLimit) ? packVehicleLimit : 0),
+      vehicleLimit: preservedVehicleLimit,
       supportedEquipments: Array.from(new Set(packEquipments)).sort((a, b) => a.localeCompare(b)),
       features,
       isActive: true
@@ -1109,20 +1110,6 @@ export function SubscriptionsPage() {
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Véhicules autorisés (quota)</label>
-              <input
-                type="number"
-                min={0}
-                value={packVehicleLimit}
-                onChange={(e) => setPackVehicleLimit(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Ce quota sera proposé par défaut lors de l’affectation du pack à un client.
-              </p>
             </div>
 
             <div className="border border-slate-200 rounded-lg p-3 bg-white">
