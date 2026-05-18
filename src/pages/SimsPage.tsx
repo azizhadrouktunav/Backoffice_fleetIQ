@@ -21,6 +21,10 @@ import {
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { SearchableSelect } from '../components/SearchableSelect';
+import {
+  SimTableContextMenu,
+  type SimRowContextMenuState
+} from '../components/SimTableContextMenu';
 import { SimCard, SimOffer, useFleetStore } from '../state/FleetStore';
 import {
   getAssignableSimTargets,
@@ -209,6 +213,8 @@ export function SimsPage() {
   // --- Delete confirm modal ---
   const [simToDelete, setSimToDelete] = useState<SimCard | null>(null);
 
+  const [contextMenu, setContextMenu] = useState<SimRowContextMenuState>(null);
+
   const openCreateSim = () => {
     setSimEditingId(null);
     setSimForm({
@@ -385,6 +391,29 @@ export function SimsPage() {
     setAssignSimIds(ids);
     setAssignClientName('');
     setIsAssignOpen(true);
+  };
+
+  const getBulkAssignIdsForSim = (sim: SimCard) => {
+    const ids = new Set(selectedSimIds);
+    if (isSimSelectable(sim)) ids.add(sim.id);
+    return Array.from(ids).filter((id) => {
+      const s = visibleSims.find((x) => x.id === id);
+      return s != null && isSimSelectable(s);
+    });
+  };
+
+  const openBulkAssignFromContext = (sim: SimCard) => {
+    const ids = getBulkAssignIdsForSim(sim);
+    if (ids.length === 0) return;
+    setSelectedSimIds(new Set(ids));
+    setAssignSimIds(ids);
+    setAssignClientName('');
+    setIsAssignOpen(true);
+  };
+
+  const handleRowContextMenu = (e: React.MouseEvent, sim: SimCard) => {
+    e.preventDefault();
+    setContextMenu({ sim, x: e.clientX, y: e.clientY });
   };
 
   const confirmAssignToClient = () => {
@@ -639,7 +668,7 @@ export function SimsPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" onContextMenu={(e) => e.preventDefault()}>
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide bg-slate-50/50">
@@ -677,7 +706,8 @@ export function SimsPage() {
                 return (
                   <tr
                     key={sim.id}
-                    className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/60' : ''}`}
+                    className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/60' : ''} ${contextMenu?.sim.id === sim.id ? 'ring-1 ring-inset ring-blue-300' : ''}`}
+                    onContextMenu={(e) => handleRowContextMenu(e, sim)}
                   >
                     <td className="p-4 w-10">
                       <input
@@ -803,6 +833,32 @@ export function SimsPage() {
           </table>
         </div>
       </div>
+
+      {contextMenu && (() => {
+        const sim = contextMenu.sim;
+        const status = getSimStatus(sim);
+        const selectable = isSimSelectable(sim);
+        const bulkIds = getBulkAssignIdsForSim(sim);
+        return (
+          <SimTableContextMenu
+            menu={contextMenu}
+            onClose={() => setContextMenu(null)}
+            selectedCount={selectedSimIds.size}
+            isRowSelected={selectedSimIds.has(sim.id)}
+            isSelectable={selectable}
+            canAssign={status !== 'assigned_equipment'}
+            canUnassign={status === 'assigned_client'}
+            canDelete={status !== 'assigned_equipment'}
+            bulkAssignCount={bulkIds.length}
+            onEdit={() => openEditSim(sim)}
+            onAssign={() => openAssignToClient(sim)}
+            onUnassign={() => unassignSim(sim)}
+            onDelete={() => setSimToDelete(sim)}
+            onToggleSelection={() => toggleSimSelection(sim.id)}
+            onBulkAssign={() => openBulkAssignFromContext(sim)}
+          />
+        );
+      })()}
 
       {/* --- ADD/EDIT SIM MODAL --- */}
       <Modal
