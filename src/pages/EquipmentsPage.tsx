@@ -24,13 +24,12 @@ import {
   Car as CarIcon,
   Trash2,
   Smartphone,
-  AlertCircle,
-  Search,
-  Check
+  AlertCircle
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { EquipmentsUnifiedTable } from '../components/EquipmentsUnifiedTable';
+import { SimIccidPicker } from '../components/SimIccidPicker';
 import { EquipmentType, useFleetStore } from '../state/FleetStore';
 import { getVisibleEquipments, isStockClientName } from '../utils/fleetVisibility';
 import {
@@ -100,7 +99,6 @@ export function EquipmentsPage() {
   const [equipmentToEdit, setEquipmentToEdit] = useState<any | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editSimId, setEditSimId] = useState<number | null>(null);
-  const [editSimSearch, setEditSimSearch] = useState('');
 
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [equipmentToView, setEquipmentToView] = useState<any | null>(null);
@@ -368,16 +366,6 @@ export function EquipmentsPage() {
     });
   }, [simCards, equipmentToEdit]);
 
-  const filteredEditSims = useMemo(() => {
-    const q = editSimSearch.trim().toLowerCase();
-    if (!q) return editAvailableSims;
-    return editAvailableSims.filter(
-      (s) =>
-        s.iccid.toLowerCase().includes(q) ||
-        (s.phoneNumber && s.phoneNumber.toLowerCase().includes(q))
-    );
-  }, [editAvailableSims, editSimSearch]);
-
   const openEditEquipment = (eq: any) => {
     const client = clients.find((c) => c.name === eq.client && !c.name.endsWith('_Stock'));
     const defaultPackId =
@@ -388,7 +376,6 @@ export function EquipmentsPage() {
       simCards.find((s) => s.equipmentId === eq.id) ??
       simCards.find((s) => s.iccid && s.iccid === eq.iccid);
     setEditSimId(currentSim?.id ?? null);
-    setEditSimSearch(currentSim?.iccid ?? '');
     setEquipmentToEdit({ ...eq, packId: defaultPackId ?? eq.packId });
     setIsEditModalOpen(true);
   };
@@ -693,7 +680,6 @@ export function EquipmentsPage() {
         onClose={() => {
           setIsEditModalOpen(false);
           setEditSimId(null);
-          setEditSimSearch('');
         }}
         title="Modifier l'équipement"
         size="lg">
@@ -757,71 +743,13 @@ export function EquipmentsPage() {
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  N° de série puce (ICCID)
-                </label>
-                <div className="relative">
-                  <Search
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                    size={14}
-                  />
-                  <input
-                    type="text"
-                    value={editSimSearch}
-                    onChange={(e) => setEditSimSearch(e.target.value)}
-                    placeholder="Rechercher un ICCID…"
-                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  />
-                </div>
-                {editSimId != null && (
-                  <div className="mt-2 flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
-                    <span className="font-medium text-blue-800 break-all">
-                      {simCards.find((s) => s.id === editSimId)?.iccid}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditSimId(null);
-                        setEditSimSearch('');
-                      }}
-                      className="text-xs text-blue-600 hover:text-blue-800 shrink-0"
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                )}
-                <div className="mt-2 max-h-44 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100 bg-white shadow-sm">
-                  {editAvailableSims.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-sm text-slate-400">
-                      Aucune puce disponible pour cet équipement.
-                    </div>
-                  ) : filteredEditSims.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-sm text-slate-400">
-                      Aucun ICCID ne correspond à la recherche.
-                    </div>
-                  ) : (
-                    filteredEditSims.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => {
-                          setEditSimId(s.id);
-                          setEditSimSearch(s.iccid);
-                        }}
-                        className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center justify-between gap-2 ${
-                          editSimId === s.id
-                            ? 'bg-blue-50 text-blue-800'
-                            : 'text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="font-medium break-all">{s.iccid}</span>
-                        {editSimId === s.id && (
-                          <Check size={14} className="text-blue-600 shrink-0" />
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
+                <SimIccidPicker
+                  availableSims={editAvailableSims}
+                  selectedSimId={editSimId}
+                  onSelectSimId={setEditSimId}
+                  simOfferById={simOfferById}
+                  emptyMessage="Aucune puce disponible pour cet équipement."
+                />
               </div>
             </div>
           </div>
@@ -1319,60 +1247,21 @@ export function EquipmentsPage() {
                   })();
             return (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  N° de série puce (ICCID){' '}
-                  <span className="text-[11px] text-slate-500 font-normal">— optionnel</span>
-                </label>
                 {clientSims.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm">
                     Aucune puce disponible{assignMode === 'client' ? ' pour ce client' : ' pour ce revendeur'}. Ajoutez-en depuis « Gestion des puces ».
                   </div>
                 ) : (
-                  <select
-                    value={assignSimId ?? ''}
-                    onChange={(e) => setAssignSimId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-                  >
-                    <option value="">— Aucune puce —</option>
-                    {clientSims.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.iccid || '(sans ICCID)'}
-                      </option>
-                    ))}
-                  </select>
+                  <SimIccidPicker
+                    optional
+                    labelClassName="block text-sm font-medium text-slate-700 mb-1"
+                    availableSims={clientSims}
+                    selectedSimId={assignSimId}
+                    onSelectSimId={setAssignSimId}
+                    simOfferById={simOfferById}
+                    emptyMessage="Aucune puce disponible."
+                  />
                 )}
-
-                {assignSimId != null && (() => {
-                  const selectedSim = simCards.find((s) => s.id === assignSimId);
-                  if (!selectedSim) return null;
-                  const offer = selectedSim.offerId != null ? simOfferById.get(selectedSim.offerId) : undefined;
-                  return (
-                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">N° de série puce (ICCID)</div>
-                        <div className="font-medium text-slate-900 break-all">{selectedSim.iccid || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">Carte SIM</div>
-                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">N° d'appel puce</div>
-                        <div className="font-medium text-slate-900">{selectedSim.phoneNumber || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-500">Opérateur</div>
-                        <div className="font-medium text-slate-900">{offer?.operator || '—'}</div>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <div className="text-[11px] uppercase text-slate-500">Offre puce</div>
-                        <div className="font-medium text-slate-900">
-                          {offer ? `${offer.name} — ${offer.pricePerSim.toFixed(2)} TND / puce` : '—'}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
             );
           })()}
