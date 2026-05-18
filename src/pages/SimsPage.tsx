@@ -824,31 +824,20 @@ export function SimsPage() {
               <Package size={14} className="text-slate-500" />
               Offre puce <span className="text-red-500">*</span>
             </label>
-            <div className="flex items-center gap-2">
-              <select
-                value={simForm.offerId ?? ''}
-                onChange={(e) =>
-                  setSimForm((f) => ({ ...f, offerId: e.target.value ? Number(e.target.value) : null }))
-                }
-                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow bg-white"
-              >
-                <option value="">— Sélectionner une offre —</option>
-                {simOffers.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name} — {o.operator} ({formatPrice(o.pricePerSim)})
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={openCreateOffer}
-                className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5"
-                title="Créer une nouvelle offre"
-              >
-                <Plus size={14} />
-                Nouvelle
-              </button>
-            </div>
+            <select
+              value={simForm.offerId ?? ''}
+              onChange={(e) =>
+                setSimForm((f) => ({ ...f, offerId: e.target.value ? Number(e.target.value) : null }))
+              }
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow bg-white"
+            >
+              <option value="">— Sélectionner une offre —</option>
+              {simOffers.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name} — {o.operator} ({formatPrice(o.pricePerSim)})
+                </option>
+              ))}
+            </select>
             {simForm.offerId != null && (() => {
               const selectedOffer = offerById.get(simForm.offerId);
               if (!selectedOffer) return null;
