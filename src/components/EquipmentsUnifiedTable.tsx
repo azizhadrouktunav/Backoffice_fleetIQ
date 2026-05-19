@@ -96,7 +96,16 @@ export function EquipmentsUnifiedTable({
   };
 
   const renderStatusBadge = (eq: FleetEquipment) => {
-    if (eq.isInstalled) {
+    const status = getEquipmentStatus(eq);
+    if (status === 'stock') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+          <Boxes size={12} />
+          Stock
+        </span>
+      );
+    }
+    if (status === 'installed') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
           <CheckCircle2 size={12} />
@@ -160,7 +169,7 @@ export function EquipmentsUnifiedTable({
           <option value="all">Tous les statuts</option>
           <option value="installed">Installée</option>
           <option value="not_installed">Non installée</option>
-          <option value="stock">Stock Tunav</option>
+          <option value="stock">Stock</option>
         </select>
       </div>
 
