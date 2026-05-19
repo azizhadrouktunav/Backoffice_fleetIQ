@@ -47,7 +47,6 @@ import {
   getVisibleClients,
   getVisibleEquipments
 } from '../utils/fleetVisibility';
-import { getClientEquipmentSerials } from '../utils/fleetAssignment';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -942,9 +941,6 @@ export function ClientsPage() {
     setPeriodEnd('');
   };
 
-  const getClientImeis = (client: FleetClient) =>
-    getClientEquipmentSerials(client, visibleEquipments);
-
   const totalEquipmentCount = useMemo(
     () =>
       filteredClients.reduce((sum, c) => {
@@ -1069,7 +1065,7 @@ export function ClientsPage() {
                 <th className="p-4 font-medium">Client</th>
                 <th className="p-4 font-medium">Revendeur</th>
                 <th className="p-4 font-medium">Type</th>
-                <th className="p-4 font-medium">IMEI</th>
+                <th className="p-4 font-medium">Parc équipements</th>
                 <th className="p-4 font-medium">Statut</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
@@ -1090,29 +1086,41 @@ export function ClientsPage() {
                     </span>
                   </td>
                   <td className="p-4">
-                    {(() => {
-                      const imeis = getClientImeis(client);
-                      if (imeis.length === 0) {
-                        return <span className="text-slate-400 italic text-xs">Aucun IMEI</span>;
-                      }
-                      return (
-                        <div className="flex flex-col gap-0.5 max-w-[220px]">
-                          {imeis.slice(0, 3).map((serial) => (
-                            <span
-                              key={serial}
-                              className="inline-flex items-center gap-1 text-xs font-mono text-slate-700 truncate"
-                              title={serial}
-                            >
-                              <Hash size={11} className="text-slate-400 shrink-0" />
-                              {serial}
-                            </span>
-                          ))}
-                          {imeis.length > 3 && (
-                            <span className="text-[10px] text-slate-400">+{imeis.length - 3} autre(s)</span>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {client.type === 'Revendeur' ? (
+                      (() => {
+                        const total = equipmentStats.resellerTotals.get(client.name) ?? 0;
+                        return (
+                          <span
+                            className={`text-sm font-medium tabular-nums ${total === 0 ? 'text-slate-400 italic' : 'text-slate-700'}`}
+                            title={`${total} équipement${total > 1 ? 's' : ''} affecté${total > 1 ? 's' : ''} au total`}
+                          >
+                            {total === 0 ? 'Aucun' : total}
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      (() => {
+                        const stats = equipmentStats.simpleByClient.get(client.name) ?? {
+                          installed: 0,
+                          total: 0
+                        };
+                        if (stats.total === 0) {
+                          return (
+                            <span className="text-slate-400 italic text-xs">Aucun équipement</span>
+                          );
+                        }
+                        return (
+                          <span
+                            className="text-sm font-medium tabular-nums text-slate-700"
+                            title={`${stats.installed} installé${stats.installed > 1 ? 's' : ''} sur ${stats.total} affecté${stats.total > 1 ? 's' : ''}`}
+                          >
+                            <span className="text-emerald-600">{stats.installed}</span>
+                            <span className="text-slate-400 mx-1">/</span>
+                            <span>{stats.total}</span>
+                          </span>
+                        );
+                      })()
+                    )}
                   </td>
                   <td className="p-4">
                     <span
