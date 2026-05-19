@@ -34,8 +34,9 @@ export function App() {
   const canAccess = (route: 'dashboard' | 'clients' | 'subscriptions' | 'equipments' | 'sims') => {
     switch (currentRole) {
       case 'admin_tunav':
-      case 'revendeur':
         return true;
+      case 'revendeur':
+        return route !== 'subscriptions';
       case 'sav_tunav':
         return route === 'dashboard' || route === 'equipments' || route === 'sims';
       case 'finance_tunav':

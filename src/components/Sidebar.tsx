@@ -35,7 +35,7 @@ const ALLOWED_BY_ROLE: Record<BackofficeRole, NavItemKey[]> = {
   admin_tunav: ['dashboard', 'clients', 'subscriptions', 'sims', 'equipments'],
   sav_tunav: ['dashboard', 'sims', 'equipments'],
   finance_tunav: ['dashboard', 'clients', 'subscriptions'],
-  revendeur: ['dashboard', 'clients', 'subscriptions', 'sims', 'equipments']
+  revendeur: ['dashboard', 'clients', 'sims', 'equipments']
 };
 
 const ROLE_META: Record<

@@ -30,6 +30,7 @@ import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { EquipmentsUnifiedTable } from '../components/EquipmentsUnifiedTable';
 import { SimIccidPicker } from '../components/SimIccidPicker';
+import { SearchableSelect } from '../components/SearchableSelect';
 import { EquipmentType, useFleetStore } from '../state/FleetStore';
 import { getVisibleEquipments, isStockClientName } from '../utils/fleetVisibility';
 import {
@@ -262,6 +263,24 @@ export function EquipmentsPage() {
         )
         .sort((a, b) => a.name.localeCompare(b.name)),
     [clients]
+  );
+
+  const assignableClients = useMemo(
+    () =>
+      clients
+        .filter((c) => !c.name.endsWith('_Stock'))
+        .filter((c) => c.name !== 'Tunav')
+        .filter((c) => c.type === 'Simple')
+        .filter((c) =>
+          currentUserRole === 'Tunav' ? c.reseller === 'Tunav' : c.reseller === currentUserName
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [clients, currentUserRole, currentUserName]
+  );
+
+  const assignableResellerOptions = useMemo(
+    () => resellersList.map((c) => c.name),
+    [resellersList]
   );
 
   const saveQuotas = () => {
@@ -1224,49 +1243,28 @@ export function EquipmentsPage() {
           {assignMode === 'client' ? (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
-              <select
+              <SearchableSelect
                 value={assignClientName}
-                onChange={(e) => {
-                  setAssignClientName(e.target.value);
+                onChange={(v) => {
+                  setAssignClientName(v);
                   setAssignSimId(null);
                 }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              >
-                <option value="">Sélectionner…</option>
-                {clients
-                  .filter((c) => !c.name.endsWith('_Stock'))
-                  .filter((c) => c.name !== 'Tunav')
-                  .filter((c) => c.type === 'Simple')
-                  .filter((c) =>
-                    currentUserRole === 'Tunav'
-                      ? c.reseller === 'Tunav'
-                      : c.reseller === currentUserName
-                  )
-                  .map((c) => (
-                    <option key={c.id} value={c.name}>
-                      {c.name}
-                    </option>
-                  ))}
-              </select>
+                options={assignableClients.map((c) => c.name)}
+                placeholder="Rechercher et sélectionner un client…"
+              />
             </div>
           ) : (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Revendeur</label>
-              <select
+              <SearchableSelect
                 value={assignResellerName}
-                onChange={(e) => {
-                  setAssignResellerName(e.target.value);
+                onChange={(v) => {
+                  setAssignResellerName(v);
                   setAssignSimId(null);
                 }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              >
-                <option value="">Sélectionner…</option>
-                {resellersList.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                options={assignableResellerOptions}
+                placeholder="Rechercher et sélectionner un revendeur…"
+              />
             </div>
           )}
 
