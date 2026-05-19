@@ -680,6 +680,19 @@ export function ClientsPage() {
   const [clientInstallError, setClientInstallError] = useState<string | null>(null);
   const [isClientInstallOpen, setIsClientInstallOpen] = useState(false);
 
+  const clientInstallPlateOptions = useMemo(() => {
+    const clientName = clientEquipmentToInstall?.client;
+    if (!clientName) return [];
+    const plates = new Set<string>();
+    for (const e of equipments) {
+      if (e.client !== clientName) continue;
+      const plate = typeof e.car === 'string' ? e.car.trim() : '';
+      if (!plate || plate === 'Unassigned') continue;
+      plates.add(plate);
+    }
+    return Array.from(plates).sort((a, b) => a.localeCompare(b));
+  }, [equipments, clientEquipmentToInstall?.client]);
+
   const openClientEquipmentInstall = (eq: FleetEquipment) => {
     const c = storeClients.find((x) => x.name === eq.client);
     const limit = c?.vehicleLimit;
@@ -1872,12 +1885,14 @@ export function ClientsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Immatriculation (véhicule)
             </label>
-            <input
+            <InstallPlateSelect
               value={clientInstallPlate}
-              onChange={(e) => setClientInstallPlate(e.target.value)}
-              placeholder="Ex: TN-1234-A"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              onChange={setClientInstallPlate}
+              plates={clientInstallPlateOptions}
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Recherchez dans la liste ou ajoutez une nouvelle immatriculation si elle n&apos;existe pas.
+            </p>
           </div>
           {clientInstallError && (
             <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">
