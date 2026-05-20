@@ -246,11 +246,6 @@ function isDisconnectedByThreshold(lastSeen: string, thresholdHours: number): bo
   return getHoursSinceLastSeen(lastSeen) >= thresholdHours;
 }
 
-function formatDisconnectDuration(lastSeen: string): string {
-  const h = Math.round(getHoursSinceLastSeen(lastSeen));
-  return `${h}h`;
-}
-
 function disconnectThresholdSuffix(hours: number): string {
   return `(+${hours}h)`;
 }
@@ -476,6 +471,7 @@ export function DashboardPage() {
           </div>
           <PeriodFilter
             variant="inline"
+            hideToday
             value={tunavPeriod}
             onChange={setTunavPeriod}
             startDate={tunavStartDate}
@@ -549,6 +545,7 @@ export function DashboardPage() {
             {selectedReseller && (
               <PeriodFilter
                 variant="inline"
+                hideToday
                 value={resellerPeriod}
                 onChange={setResellerPeriod}
                 startDate={resellerStartDate}
@@ -633,6 +630,7 @@ export function DashboardPage() {
             <div className="w-full min-w-0">
               <label className="block text-sm font-medium text-slate-700 mb-2">Période</label>
               <PeriodFilter
+                hideToday
                 value={disconnectPeriod}
                 onChange={setDisconnectPeriod}
                 startDate={disconnectStartDate}
@@ -654,14 +652,13 @@ export function DashboardPage() {
 
           {filteredDisconnected.length > 0 ? (
             <div className="border border-slate-200 rounded-lg overflow-hidden overflow-x-auto">
-              <table className="w-full text-left min-w-[640px]">
+              <table className="w-full text-left min-w-[520px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                     <th className="p-3 font-medium">N° Série</th>
                     <th className="p-3 font-medium">Client</th>
                     <th className="p-3 font-medium">Véhicule</th>
                     <th className="p-3 font-medium">Dernière connexion</th>
-                    <th className="p-3 font-medium text-right">Durée</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
@@ -677,11 +674,6 @@ export function DashboardPage() {
                         )}
                       </td>
                       <td className="p-3 text-slate-600">{formatLastConnection(eq.lastSeen)}</td>
-                      <td className="p-3 text-right">
-                        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
-                          {formatDisconnectDuration(eq.lastSeen)}
-                        </span>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -730,6 +722,7 @@ export function DashboardPage() {
             <div className="w-full min-w-0">
               <label className="block text-sm font-medium text-slate-700 mb-2">Période</label>
               <PeriodFilter
+                hideToday
                 value={disconnectPeriod}
                 onChange={setDisconnectPeriod}
                 startDate={disconnectStartDate}
@@ -755,7 +748,6 @@ export function DashboardPage() {
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                     <th className="p-3 font-medium">Client</th>
-                    <th className="p-3 font-medium">Équipements déconnectés</th>
                     <th className="p-3 font-medium">Dernière connexion</th>
                   </tr>
                 </thead>
@@ -763,11 +755,6 @@ export function DashboardPage() {
                   {filteredDisconnectedClientsRows.map((row) => (
                     <tr key={row.client} className="hover:bg-slate-50">
                       <td className="p-3 font-medium text-slate-900">{row.client}</td>
-                      <td className="p-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700 border border-red-100">
-                          {row.disconnectedEquipments}
-                        </span>
-                      </td>
                       <td className="p-3 text-slate-600">{formatLastConnection(row.lastConnection)}</td>
                     </tr>
                   ))}

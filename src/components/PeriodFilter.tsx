@@ -12,6 +12,8 @@ interface PeriodFilterProps {
   onEndDateChange?: (date: string) => void;
   /** inline = barre compacte (tableau de bord) ; block = pleine largeur (modales, filtres) */
   variant?: 'inline' | 'block';
+  /** Masquer l’option « Aujourd’hui » (ex. tableau de bord) */
+  hideToday?: boolean;
 }
 
 const periods: { key: PeriodKey; label: string }[] = [
@@ -29,9 +31,11 @@ export function PeriodFilter({
   endDate = '',
   onStartDateChange,
   onEndDateChange,
-  variant = 'block'
+  variant = 'block',
+  hideToday = false
 }: PeriodFilterProps) {
   const isInline = variant === 'inline';
+  const visiblePeriods = hideToday ? periods.filter((p) => p.key !== 'today') : periods;
 
   return (
     <div
@@ -46,7 +50,7 @@ export function PeriodFilter({
           size={14}
           className={`text-slate-400 shrink-0 ${isInline ? 'ml-2 mr-0.5' : 'ml-1.5'}`}
         />
-        {periods.map((p) => (
+        {visiblePeriods.map((p) => (
           <button
             key={p.key}
             type="button"
