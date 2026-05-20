@@ -101,6 +101,38 @@ function isDateInRange(dateStr: string, from: Date, to: Date): boolean {
   return d >= from && d <= to;
 }
 
+function parseEquipmentLastConnection(eq: FleetEquipment): Date | null {
+  const dateLocal = eq.lastPosition?.dateLocal;
+  if (typeof dateLocal === 'string' && dateLocal.trim()) {
+    const m = dateLocal.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+    if (m) {
+      return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +m[6]);
+    }
+    const parsed = new Date(dateLocal.replace(' ', 'T'));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  if (eq.firstSendDate?.trim()) {
+    const d = new Date(eq.firstSendDate);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function formatClientLastConnection(date: Date | null | undefined): string {
+  if (!date) return <span className="text-slate-400 italic text-xs">—</span>;
+  return (
+    <span className="text-sm text-slate-700 tabular-nums">
+      {date.toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })}
+    </span>
+  );
+}
+
 function enrichClientForModal(c: FleetClient) {
   const mock = mockClients.find((m) => m.id === c.id || m.name === c.name);
   if (mock) {
@@ -878,18 +910,30 @@ export function ClientsPage() {
   const equipmentStats = useMemo(() => {
     const simpleByClient = new Map<string, { installed: number; total: number }>();
     const resellerTotals = new Map<string, number>();
+    const lastConnectionByClient = new Map<string, Date>();
+
+    const registerLastConnection = (key: string, at: Date) => {
+      const cur = lastConnectionByClient.get(key);
+      if (!cur || at > cur) lastConnectionByClient.set(key, at);
+    };
+
     for (const e of visibleEquipments) {
+      const lastAt = parseEquipmentLastConnection(e);
+
       if (e.reseller) {
         resellerTotals.set(e.reseller, (resellerTotals.get(e.reseller) ?? 0) + 1);
+        if (lastAt) registerLastConnection(e.reseller, lastAt);
       }
+
       if (!e.client.endsWith('_Stock') && e.client !== 'Tunav') {
         const cur = simpleByClient.get(e.client) ?? { installed: 0, total: 0 };
         cur.total += 1;
         if (e.isInstalled) cur.installed += 1;
         simpleByClient.set(e.client, cur);
+        if (lastAt) registerLastConnection(e.client, lastAt);
       }
     }
-    return { simpleByClient, resellerTotals };
+    return { simpleByClient, resellerTotals, lastConnectionByClient };
   }, [visibleEquipments]);
 
   const visibleClients = useMemo(
@@ -1079,6 +1123,7 @@ export function ClientsPage() {
                 <th className="p-4 font-medium">Revendeur</th>
                 <th className="p-4 font-medium">Type</th>
                 <th className="p-4 font-medium">Parc équipements</th>
+                <th className="p-4 font-medium">Dernière connexion</th>
                 <th className="p-4 font-medium">Statut</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
@@ -1133,6 +1178,11 @@ export function ClientsPage() {
                           </span>
                         );
                       })()
+                    )}
+                  </td>
+                  <td className="p-4">
+                    {formatClientLastConnection(
+                      equipmentStats.lastConnectionByClient.get(client.name)
                     )}
                   </td>
                   <td className="p-4">
