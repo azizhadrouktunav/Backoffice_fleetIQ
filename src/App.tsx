@@ -17,6 +17,11 @@ export function App() {
   const handleLogin = (ctx: LoginContext) => {
     setCurrentRole(ctx.role);
     setIsAuthenticated(true);
+    try {
+      sessionStorage.setItem('backoffice_role', ctx.role);
+    } catch {
+      // ignore
+    }
   };
 
   const handleLogout = () => {
@@ -24,6 +29,11 @@ export function App() {
     setCurrentRole(null);
     setCurrentUserRole('Tunav');
     setCurrentUserName('Tunav');
+    try {
+      sessionStorage.removeItem('backoffice_role');
+    } catch {
+      // ignore
+    }
   };
 
   if (!isAuthenticated || !currentRole) {

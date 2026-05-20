@@ -2,8 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { StatCard } from '../components/StatCard';
 import { PeriodFilter, PeriodKey } from '../components/PeriodFilter';
 import { SearchableSelect } from '../components/SearchableSelect';
-import { Users, Server, WifiOff, Building2, AlertCircle, UserX } from 'lucide-react';
+import { Users, Server, WifiOff, Building2, AlertCircle, UserX, Settings } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useFleetStore } from '../state/FleetStore';
 
 type DisconnectedEquipment = {
   id: number;
@@ -231,6 +232,29 @@ function isLastSeenInPeriod(
   return d >= from && d <= to;
 }
 
+function parseLastSeen(lastSeen: string): Date {
+  return new Date(lastSeen.replace(' ', 'T'));
+}
+
+function getHoursSinceLastSeen(lastSeen: string): number {
+  const d = parseLastSeen(lastSeen);
+  if (Number.isNaN(d.getTime())) return 0;
+  return (Date.now() - d.getTime()) / (1000 * 60 * 60);
+}
+
+function isDisconnectedByThreshold(lastSeen: string, thresholdHours: number): boolean {
+  return getHoursSinceLastSeen(lastSeen) >= thresholdHours;
+}
+
+function formatDisconnectDuration(lastSeen: string): string {
+  const h = Math.round(getHoursSinceLastSeen(lastSeen));
+  return `${h}h`;
+}
+
+function disconnectThresholdSuffix(hours: number): string {
+  return `(+${hours}h)`;
+}
+
 function periodLabel(period: PeriodKey): string {
   switch (period) {
     case 'today':
@@ -247,8 +271,15 @@ function periodLabel(period: PeriodKey): string {
 }
 
 export function DashboardPage() {
+  const { disconnectThresholdHours, setDisconnectThresholdHours } = useFleetStore();
+  const isAdmin =
+    typeof sessionStorage !== 'undefined' &&
+    sessionStorage.getItem('backoffice_role') === 'admin_tunav';
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDisconnectedClientsModalOpen, setIsDisconnectedClientsModalOpen] = useState(false);
+  const [isThresholdModalOpen, setIsThresholdModalOpen] = useState(false);
+  const [thresholdDraft, setThresholdDraft] = useState(String(disconnectThresholdHours));
   const [modalSource, setModalSource] = useState<'tunav' | 'reseller'>('tunav');
   const [selectedReseller, setSelectedReseller] = useState('');
   const [disconnectClientFilter, setDisconnectClientFilter] = useState('');
@@ -266,14 +297,68 @@ export function DashboardPage() {
   const tunavStats = tunavStatsByPeriod[tunavPeriod];
   const resellerStats = selectedReseller ? resellerStatsByPeriod[resellerPeriod] : null;
 
-  const scopeDisconnected = useMemo(() => {
+  const thresholdSuffix = disconnectThresholdSuffix(disconnectThresholdHours);
+
+  const allThresholdDisconnected = useMemo(
+    () =>
+      mockDisconnectedEquipments.filter((eq) =>
+        isDisconnectedByThreshold(eq.lastSeen, disconnectThresholdHours)
+      ),
+    [disconnectThresholdHours]
+  );
+
+  const scopeBySource = useMemo(() => {
     if (modalSource === 'reseller' && selectedReseller) {
       const reseller = mockResellers.find((r) => r.id === selectedReseller);
-      if (!reseller) return mockDisconnectedEquipments;
-      return mockDisconnectedEquipments.filter((eq) => eq.client === reseller.name);
+      if (!reseller) return allThresholdDisconnected;
+      return allThresholdDisconnected.filter((eq) => eq.client === reseller.name);
     }
-    return mockDisconnectedEquipments;
-  }, [modalSource, selectedReseller]);
+    return allThresholdDisconnected;
+  }, [modalSource, selectedReseller, allThresholdDisconnected]);
+
+  const scopeDisconnected = scopeBySource;
+
+  const filterByDashboardPeriod = (
+    items: DisconnectedEquipment[],
+    period: PeriodKey,
+    start: string,
+    end: string
+  ) =>
+    items.filter((eq) => isLastSeenInPeriod(eq.lastSeen, period, start, end));
+
+  const tunavDisconnectedEquipments = useMemo(
+    () =>
+      filterByDashboardPeriod(allThresholdDisconnected, tunavPeriod, tunavStartDate, tunavEndDate),
+    [allThresholdDisconnected, tunavPeriod, tunavStartDate, tunavEndDate]
+  );
+
+  const tunavDisconnectedClientsCount = useMemo(
+    () => aggregateDisconnectedClients(tunavDisconnectedEquipments).length,
+    [tunavDisconnectedEquipments]
+  );
+
+  const resellerScopeDisconnected = useMemo(() => {
+    if (!selectedReseller) return [];
+    const reseller = mockResellers.find((r) => r.id === selectedReseller);
+    if (!reseller) return [];
+    return allThresholdDisconnected.filter((eq) => eq.client === reseller.name);
+  }, [selectedReseller, allThresholdDisconnected]);
+
+  const resellerDisconnectedEquipments = useMemo(
+    () =>
+      filterByDashboardPeriod(
+        resellerScopeDisconnected,
+        resellerPeriod,
+        resellerStartDate,
+        resellerEndDate
+      ),
+    [resellerScopeDisconnected, resellerPeriod, resellerStartDate, resellerEndDate]
+  );
+
+  const resellerDisconnectedClientsCount = useMemo(
+    () => aggregateDisconnectedClients(resellerDisconnectedEquipments).length,
+    [resellerDisconnectedEquipments]
+  );
 
   const dateFilteredScope = useMemo(
     () =>
@@ -339,22 +424,47 @@ export function DashboardPage() {
   const equipmentModalTitle =
     modalSource === 'reseller' && selectedReseller
       ? `Équipements Déconnectés — ${mockResellers.find((r) => r.id === selectedReseller)?.name}`
-      : 'Équipements Déconnectés (+24h)';
+      : `Équipements Déconnectés ${thresholdSuffix}`;
 
   const clientsModalTitle =
     modalSource === 'reseller' && selectedReseller
       ? `Clients déconnectés — ${mockResellers.find((r) => r.id === selectedReseller)?.name}`
-      : 'Clients déconnectés (+24h)';
+      : `Clients déconnectés ${thresholdSuffix}`;
+
+  const openThresholdModal = () => {
+    setThresholdDraft(String(disconnectThresholdHours));
+    setIsThresholdModalOpen(true);
+  };
+
+  const saveThreshold = () => {
+    const n = parseInt(thresholdDraft, 10);
+    if (!Number.isFinite(n) || n < 1) return;
+    setDisconnectThresholdHours(n);
+    setIsThresholdModalOpen(false);
+  };
 
   return (
     <div className="space-y-8 pb-8">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-semibold text-slate-900">Tableau de bord</h1>
-        <div className="text-xs text-slate-500">Dernière mise à jour : Aujourd&apos;hui, 10:42</div>
+        <div className="flex items-center gap-3 shrink-0">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={openThresholdModal}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
+              title="Configurer le seuil de déconnexion"
+            >
+              <Settings size={16} className="text-slate-500" />
+              <span className="hidden sm:inline">Déconnexion {thresholdSuffix}</span>
+            </button>
+          )}
+     
+        </div>
       </div>
 
       <section>
-        <div className="mb-4 flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
               <div className="w-1 h-6 bg-blue-600 rounded-full" />
@@ -365,6 +475,7 @@ export function DashboardPage() {
             </p>
           </div>
           <PeriodFilter
+            variant="inline"
             value={tunavPeriod}
             onChange={setTunavPeriod}
             startDate={tunavStartDate}
@@ -393,16 +504,16 @@ export function DashboardPage() {
           />
           <StatCard
             title="Équipements Déconnectés"
-            value={tunavStats.disconnected}
-            subtitle={`Déconnectés +24h sur ${periodLabel(tunavPeriod)}`}
+            value={String(tunavDisconnectedEquipments.length)}
+            subtitle={`Déconnectés ${thresholdSuffix} sur ${periodLabel(tunavPeriod)}`}
             icon={WifiOff}
             color="red"
             onClick={() => openDisconnectedModal('tunav')}
           />
           <StatCard
             title="Clients Déconnectés"
-            value={tunavStats.disconnectedClients}
-            subtitle={`Comptes clients +24h sur ${periodLabel(tunavPeriod)}`}
+            value={String(tunavDisconnectedClientsCount)}
+            subtitle={`Comptes clients ${thresholdSuffix} sur ${periodLabel(tunavPeriod)}`}
             icon={UserX}
             color="red"
             onClick={() => openDisconnectedClientsModal('tunav')}
@@ -411,21 +522,21 @@ export function DashboardPage() {
       </section>
 
       <section className="pt-6 border-t border-slate-200">
-        <div className="mb-6 flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="w-1 h-6 bg-indigo-600 rounded-full" />
-                <h2 className="text-lg font-semibold text-slate-900">Dashboard Revendeurs</h2>
-              </div>
-              <p className="text-sm text-slate-500 ml-4 mt-1">Statistiques détaillées par revendeur</p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-1 h-6 bg-indigo-600 rounded-full" />
+              <h2 className="text-lg font-semibold text-slate-900">Dashboard Revendeurs</h2>
             </div>
+            <p className="text-sm text-slate-500 ml-4 mt-1">Statistiques détaillées par revendeur</p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
             <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
-              <Building2 size={18} className="text-slate-400 ml-2" />
+              <Building2 size={18} className="text-slate-400 ml-2 shrink-0" />
               <select
                 value={selectedReseller}
                 onChange={(e) => setSelectedReseller(e.target.value)}
-                className="bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-700 py-1 pr-8 cursor-pointer outline-none"
+                className="bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-700 py-1 pr-8 cursor-pointer outline-none min-w-[200px]"
               >
                 <option value="">Sélectionner un revendeur...</option>
                 {mockResellers.map((rev) => (
@@ -435,10 +546,9 @@ export function DashboardPage() {
                 ))}
               </select>
             </div>
-          </div>
-          {selectedReseller && (
-            <div className="flex justify-end">
+            {selectedReseller && (
               <PeriodFilter
+                variant="inline"
                 value={resellerPeriod}
                 onChange={setResellerPeriod}
                 startDate={resellerStartDate}
@@ -446,8 +556,8 @@ export function DashboardPage() {
                 onStartDateChange={setResellerStartDate}
                 onEndDateChange={setResellerEndDate}
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {selectedReseller ? (
@@ -466,16 +576,16 @@ export function DashboardPage() {
             />
             <StatCard
               title="Équipements Déconnectés"
-              value={resellerStats!.disconnected}
-              subtitle={`Déconnectés +24h sur ${periodLabel(resellerPeriod)}`}
+              value={String(resellerDisconnectedEquipments.length)}
+              subtitle={`Déconnectés ${thresholdSuffix} sur ${periodLabel(resellerPeriod)}`}
               icon={WifiOff}
               color="red"
               onClick={() => openDisconnectedModal('reseller')}
             />
             <StatCard
               title="Clients Déconnectés"
-              value={resellerStats!.disconnectedClients}
-              subtitle={`Comptes clients +24h sur ${periodLabel(resellerPeriod)}`}
+              value={String(resellerDisconnectedClientsCount)}
+              subtitle={`Comptes clients ${thresholdSuffix} sur ${periodLabel(resellerPeriod)}`}
               icon={UserX}
               color="red"
               onClick={() => openDisconnectedClientsModal('reseller')}
@@ -500,14 +610,27 @@ export function DashboardPage() {
         <div className="space-y-4">
           <div className="bg-red-50 border border-red-100 rounded-lg p-3 flex items-start gap-3">
             <AlertCircle className="text-red-600 mt-0.5 shrink-0" size={18} />
-            <p className="text-sm text-red-800">
-              Équipements n&apos;ayant pas communiqué avec la plateforme depuis plus de 24 h. Filtrez
-              par période selon la <strong>dernière connexion</strong> ({disconnectPeriodLabel}).
-            </p>
+            <div className="text-sm text-red-800 space-y-2">
+              <p>
+                Équipements sans connexion plateforme depuis plus de{' '}
+                <strong>{disconnectThresholdHours} h</strong>. Filtrez par période selon la{' '}
+                <strong>dernière connexion</strong> ({disconnectPeriodLabel}).
+              </p>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={openThresholdModal}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-red-800 hover:text-red-950 underline-offset-2 hover:underline"
+                >
+                  <Settings size={14} />
+                  Modifier le seuil ({disconnectThresholdHours} h)
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4 flex-wrap">
-            <div className="flex-1 min-w-[240px]">
+          <div className="space-y-4 w-full min-w-0">
+            <div className="w-full min-w-0">
               <label className="block text-sm font-medium text-slate-700 mb-2">Période</label>
               <PeriodFilter
                 value={disconnectPeriod}
@@ -518,7 +641,7 @@ export function DashboardPage() {
                 onEndDateChange={setDisconnectEndDate}
               />
             </div>
-            <div className="flex-1 min-w-[220px]">
+            <div className="w-full min-w-0 max-w-md">
               <label className="block text-sm font-medium text-slate-700 mb-1">Filtrer par client</label>
               <SearchableSelect
                 value={disconnectClientFilter}
@@ -556,7 +679,7 @@ export function DashboardPage() {
                       <td className="p-3 text-slate-600">{formatLastConnection(eq.lastSeen)}</td>
                       <td className="p-3 text-right">
                         <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
-                          {eq.duration}
+                          {formatDisconnectDuration(eq.lastSeen)}
                         </span>
                       </td>
                     </tr>
@@ -584,14 +707,27 @@ export function DashboardPage() {
         <div className="space-y-4">
           <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex items-start gap-3">
             <AlertCircle className="text-amber-600 mt-0.5 shrink-0" size={18} />
-            <p className="text-sm text-amber-900">
-              Comptes clients sans connexion à la plateforme depuis plus de 24 h. La date affichée
-              est la dernière connexion connue du parc client sur la période sélectionnée.
-            </p>
+            <div className="text-sm text-amber-900 space-y-2">
+              <p>
+                Comptes clients sans connexion à la plateforme depuis plus de{' '}
+                <strong>{disconnectThresholdHours} h</strong>. La date affichée est la dernière
+                connexion connue du parc client sur la période sélectionnée.
+              </p>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={openThresholdModal}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 hover:text-amber-950 underline-offset-2 hover:underline"
+                >
+                  <Settings size={14} />
+                  Modifier le seuil ({disconnectThresholdHours} h)
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4 flex-wrap">
-            <div className="flex-1 min-w-[240px]">
+          <div className="space-y-4 w-full min-w-0">
+            <div className="w-full min-w-0">
               <label className="block text-sm font-medium text-slate-700 mb-2">Période</label>
               <PeriodFilter
                 value={disconnectPeriod}
@@ -602,7 +738,7 @@ export function DashboardPage() {
                 onEndDateChange={setDisconnectEndDate}
               />
             </div>
-            <div className="flex-1 min-w-[220px]">
+            <div className="w-full min-w-0 max-w-md">
               <label className="block text-sm font-medium text-slate-700 mb-1">Filtrer par client</label>
               <SearchableSelect
                 value={disconnectClientFilter}
@@ -642,9 +778,56 @@ export function DashboardPage() {
             <div className="text-center py-8 text-slate-500 text-sm">
               {disconnectClientFilter
                 ? `Aucun client déconnecté pour « ${disconnectClientFilter} » sur ${disconnectPeriodLabel}.`
-                : `Aucun client déconnecté (+24h) sur ${disconnectPeriodLabel}.`}
+                : `Aucun client déconnecté ${thresholdSuffix} sur ${disconnectPeriodLabel}.`}
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* Configuration seuil déconnexion (admin) */}
+      <Modal
+        isOpen={isThresholdModalOpen}
+        onClose={() => setIsThresholdModalOpen(false)}
+        title="Seuil clients / équipements déconnectés"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Définit après combien d&apos;heures sans connexion à la plateforme un client ou un
+            équipement est considéré comme déconnecté. S&apos;applique aux cartes et listes du
+            tableau de bord.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Délai sans connexion (heures)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={720}
+              step={1}
+              value={thresholdDraft}
+              onChange={(e) => setThresholdDraft(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+            <p className="mt-1 text-xs text-slate-500">Entre 1 h et 720 h (30 jours).</p>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsThresholdModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={saveThreshold}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              Enregistrer
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

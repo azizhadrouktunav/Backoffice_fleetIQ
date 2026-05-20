@@ -674,11 +674,28 @@ const initialEquipments: FleetEquipment[] = [
   }
 ];
 
+const DISCONNECT_THRESHOLD_STORAGE_KEY = 'fleet_disconnect_threshold_hours';
+const DEFAULT_DISCONNECT_THRESHOLD_HOURS = 24;
+
+function readDisconnectThresholdHours(): number {
+  try {
+    const raw = window.localStorage.getItem(DISCONNECT_THRESHOLD_STORAGE_KEY);
+    const n = raw ? parseInt(raw, 10) : DEFAULT_DISCONNECT_THRESHOLD_HOURS;
+    if (!Number.isFinite(n) || n < 1) return DEFAULT_DISCONNECT_THRESHOLD_HOURS;
+    return Math.min(720, n);
+  } catch {
+    return DEFAULT_DISCONNECT_THRESHOLD_HOURS;
+  }
+}
+
 type FleetStore = {
   currentUserRole: 'Tunav' | 'Revendeur';
   setCurrentUserRole: React.Dispatch<React.SetStateAction<'Tunav' | 'Revendeur'>>;
   currentUserName: string; // "Tunav" ou nom revendeur
   setCurrentUserName: React.Dispatch<React.SetStateAction<string>>;
+  /** Délai sans connexion plateforme pour considérer un client / équipement comme déconnecté */
+  disconnectThresholdHours: number;
+  setDisconnectThresholdHours: (hours: number) => void;
   packs: Pack[];
   clients: FleetClient[];
   setClients: React.Dispatch<React.SetStateAction<FleetClient[]>>;
@@ -701,6 +718,20 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     const raw = typeof window !== 'undefined' ? window.localStorage.getItem('fleet_user') : null;
     return raw && raw.trim() ? raw : 'Tunav';
   });
+
+  const [disconnectThresholdHours, setDisconnectThresholdHoursState] = useState<number>(
+    readDisconnectThresholdHours
+  );
+
+  const setDisconnectThresholdHours = (hours: number) => {
+    const value = Math.max(1, Math.min(720, Math.round(hours)));
+    setDisconnectThresholdHoursState(value);
+    try {
+      window.localStorage.setItem(DISCONNECT_THRESHOLD_STORAGE_KEY, String(value));
+    } catch {
+      // ignore
+    }
+  };
 
   // Persist for easy demo/testing
   React.useEffect(() => {
@@ -851,6 +882,8 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
       setCurrentUserRole,
       currentUserName,
       setCurrentUserName,
+      disconnectThresholdHours,
+      setDisconnectThresholdHours,
       packs,
       clients,
       setClients,
@@ -861,7 +894,16 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
       simCards,
       setSimCards
     }),
-    [currentUserRole, currentUserName, packs, clients, equipments, simOffers, simCards]
+    [
+      currentUserRole,
+      currentUserName,
+      disconnectThresholdHours,
+      packs,
+      clients,
+      equipments,
+      simOffers,
+      simCards
+    ]
   );
 
   return <FleetStoreContext.Provider value={value}>{children}</FleetStoreContext.Provider>;

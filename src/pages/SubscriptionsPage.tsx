@@ -3,7 +3,6 @@ import {
   Search,
   Edit2,
   Users,
-  TrendingUp,
   AlertCircle,
   CheckCircle2,
   Trash2,
@@ -13,13 +12,11 @@ import {
   ChevronRight,
   Check,
   ListChecks,
-  ShieldCheck,
   CreditCard,
   Ban,
   Settings
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
-import { StatCard } from '../components/StatCard';
 import { useFleetStore } from '../state/FleetStore';
 
 type FeatureNode = {
@@ -553,7 +550,6 @@ export function SubscriptionsPage() {
   const [clientForPayment, setClientForPayment] = useState<ClientWithPack | null>(null);
   const [newExpiry, setNewExpiry] = useState('');
 
-  // Stats
   const visibleClients = useMemo(() => {
     const isTunavUser = currentUserRole === 'Tunav';
     return (allClients as unknown as ClientWithPack[])
@@ -563,21 +559,6 @@ export function SubscriptionsPage() {
       .filter((c) => c.reseller === currentUserName)
       .filter((c) => (isTunavUser ? true : c.type === 'Simple'));
   }, [allClients, currentUserName, currentUserRole]);
-
-  const totalClients = visibleClients.length;
-  const activeClients = visibleClients.filter((c) => c.status === 'Active').length;
-  const blockedClients = visibleClients.filter((c) => c.status === 'Blocked').length;
-  const clientsWithPack = visibleClients.filter((c) => c.packs.length > 0).length;
-
-  const packsActive = packs.filter((p) => p.isActive).length;
-  const totalPacks = packs.length;
-  const clientsWithCustomPack = useMemo(
-    () =>
-      visibleClients.filter((c) =>
-        c.packs.some((a) => Array.isArray(a.customFeatures) && a.customFeatures.length > 0)
-      ).length,
-    [visibleClients]
-  );
 
   const packById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
 
@@ -872,35 +853,6 @@ export function SubscriptionsPage() {
             Créez des packs, affectez des fonctionnalités, puis associez un pack à chaque client.
           </p>
         </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Packs" value={totalPacks.toString()} subtitle="Packs configurés" icon={Package} />
-        <StatCard
-          title="Clients avec pack personnalisé"
-          value={clientsWithCustomPack.toString()}
-          trend={`${totalClients ? Math.round((clientsWithCustomPack / totalClients) * 100) : 0}%`}
-          trendUp={true}
-          subtitle="Fonctionnalités personnalisées"
-          icon={ShieldCheck}
-        />
-        <StatCard
-          title="Clients Actifs"
-          value={activeClients.toString()}
-          trend={`${totalClients ? Math.round((activeClients / totalClients) * 100) : 0}%`}
-          trendUp={true}
-          subtitle="Taux d'activité"
-          icon={TrendingUp}
-        />
-        <StatCard
-          title="Clients avec pack"
-          value={clientsWithPack.toString()}
-          trend={`${totalClients ? Math.round((clientsWithPack / totalClients) * 100) : 0}%`}
-          trendUp={true}
-          subtitle="Clients associés"
-          icon={Users}
-        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
