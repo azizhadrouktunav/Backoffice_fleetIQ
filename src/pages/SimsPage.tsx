@@ -26,6 +26,7 @@ import {
   type SimRowContextMenuState
 } from '../components/SimTableContextMenu';
 import { SimCard, SimOffer, useFleetStore } from '../state/FleetStore';
+import { clientSimOfferName, simHasClientSimOffer } from '../components/SimIccidPicker';
 import {
   getAssignableSimTargets,
   getSimAssignmentClientName
@@ -102,6 +103,7 @@ export function SimsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | SimStatus>('all');
   const [offerFilter, setOfferFilter] = useState<number | 'all'>('all');
+  const [clientOfferFilter, setClientOfferFilter] = useState('');
 
   const offerById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
   const equipmentById = useMemo(() => new Map(equipments.map((e) => [e.id, e])), [equipments]);
@@ -127,6 +129,22 @@ export function SimsPage() {
   const inStockSims = visibleSims.filter((s) => getSimStatus(s) === 'stock').length;
   const assignedToEquipment = visibleSims.filter((s) => getSimStatus(s) === 'assigned_equipment').length;
   const assignedNoEquipment = visibleSims.filter((s) => getSimStatus(s) === 'assigned_client').length;
+
+  const clientOfferFilterOptions = useMemo(
+    () => assignableClients.map((c) => c.name).sort((a, b) => a.localeCompare(b)),
+    [assignableClients]
+  );
+
+  const clientOfferSimStats = useMemo(() => {
+    const allClientOfferSims = visibleSims.filter((s) => simHasClientSimOffer(s, offerById));
+    const filtered = clientOfferFilter
+      ? allClientOfferSims.filter((s) => simHasClientSimOffer(s, offerById, clientOfferFilter))
+      : allClientOfferSims;
+    return {
+      total: allClientOfferSims.length,
+      filtered: filtered.length
+    };
+  }, [visibleSims, offerById, clientOfferFilter]);
 
   // Pour chaque offre, on calcule:
   //  - installed : nb d'équipements installés dont la puce SIM utilise cette offre
@@ -515,29 +533,73 @@ export function SimsPage() {
       </div>
 
       {/* Stats par offre — équipements installés */}
-      {simOffers.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
-                Équipements installés par offre
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Nombre total d'équipements <strong>installés</strong> dont la puce SIM utilise chaque offre.
-              </p>
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+              Équipements installés par offre
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Nombre total d'équipements <strong>installés</strong> dont la puce SIM utilise chaque offre.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
+            <Wifi size={12} />
+            Total&nbsp;:&nbsp;
+            <strong className="text-slate-900">
+              {totalInstalledAllOffers} / {totalSimsAllOffers}
+            </strong>
+            <span className="text-slate-500">installés / puces</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-indigo-500 shadow-sm p-5 flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-slate-900">Puces offre puce clients</h3>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {clientOfferFilter
+                    ? clientSimOfferName(clientOfferFilter)
+                    : 'Toutes les offres « puce clients »'}
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
+                <Tag size={18} />
+              </div>
             </div>
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
-              <Wifi size={12} />
-              Total&nbsp;:&nbsp;
-              <strong className="text-slate-900">
-                {totalInstalledAllOffers} / {totalSimsAllOffers}
-              </strong>
-              <span className="text-slate-500">installés / puces</span>
-            </span>
+
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-semibold text-slate-900 tabular-nums">
+                {clientOfferFilter
+                  ? clientOfferSimStats.filtered
+                  : clientOfferSimStats.total}
+              </span>
+              <span className="text-xs text-slate-500">
+                puce
+                {(clientOfferFilter ? clientOfferSimStats.filtered : clientOfferSimStats.total) > 1
+                  ? 's'
+                  : ''}
+              </span>
+              {clientOfferFilter && (
+                <span className="text-xs text-slate-400">
+                  ({clientOfferSimStats.total} au total)
+                </span>
+              )}
+            </div>
+
+            <div className="pt-1 border-t border-slate-100">
+              <SearchableSelect
+                label="Filtrer par client"
+                value={clientOfferFilter}
+                onChange={setClientOfferFilter}
+                options={clientOfferFilterOptions}
+                placeholder="Tous les clients"
+              />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {simOffers.map((offer) => {
+          {simOffers.map((offer) => {
               const stats = offerStats.get(offer.id) ?? { installed: 0, total: 0 };
               const { installed, total } = stats;
               const installRate = total ? Math.round((installed / total) * 100) : 0;
@@ -594,9 +656,8 @@ export function SimsPage() {
                 </div>
               );
             })}
-          </div>
         </div>
-      )}
+      </div>
 
       {/* Filters + Table */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">

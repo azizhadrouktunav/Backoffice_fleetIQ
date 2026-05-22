@@ -29,7 +29,7 @@ import {
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { EquipmentsUnifiedTable } from '../components/EquipmentsUnifiedTable';
-import { SimIccidPicker } from '../components/SimIccidPicker';
+import { SimIccidPicker, type SimCreateContext } from '../components/SimIccidPicker';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { EquipmentType, useFleetStore } from '../state/FleetStore';
 import { getVisibleEquipments, isStockClientName } from '../utils/fleetVisibility';
@@ -82,11 +82,17 @@ export function EquipmentsPage() {
     packs,
     simCards,
     setSimCards,
-    simOffers
+    simOffers,
+    setSimOffers
   } = useFleetStore();
   const packById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
   const simOfferById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
   const isTunavUser = currentUserRole === 'Tunav';
+
+  const buildSimCreateContext = (clientName: string, reseller: string): SimCreateContext => ({
+    clientName,
+    reseller
+  });
 
   type EquipmentStatusFilter = 'all' | 'installed' | 'not_installed' | 'stock';
   const [filterEquipmentType, setFilterEquipmentType] = useState<string>('all');
@@ -99,8 +105,6 @@ export function EquipmentsPage() {
 
   const [equipmentToEdit, setEquipmentToEdit] = useState<any | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editSimId, setEditSimId] = useState<number | null>(null);
-
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [equipmentToView, setEquipmentToView] = useState<any | null>(null);
   const [showPositionMap, setShowPositionMap] = useState(false);
@@ -108,6 +112,7 @@ export function EquipmentsPage() {
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [equipmentToInstall, setEquipmentToInstall] = useState<any | null>(null);
   const [installPlate, setInstallPlate] = useState<string>('');
+  const [installSimId, setInstallSimId] = useState<number | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
 
   const vehiclePlateSuggestions = useMemo(() => {
@@ -335,11 +340,29 @@ export function EquipmentsPage() {
       window.alert(`Limite atteinte: ${installed}/${limit}.`);
       return;
     }
+    const currentSim =
+      simCards.find((s) => s.equipmentId === eq.id) ??
+      simCards.find((s) => s.iccid && s.iccid === eq.iccid);
     setEquipmentToInstall(eq);
     setInstallPlate(eq.car && eq.car !== 'Unassigned' ? eq.car : '');
+    setInstallSimId(currentSim?.id ?? null);
     setInstallError(null);
     setIsInstallModalOpen(true);
   };
+
+  const installAvailableSims = useMemo(() => {
+    const eq = equipmentToInstall;
+    if (!eq) return [];
+    const stock = isStockClientName(eq.client);
+    return simCards.filter((s) => {
+      if (s.equipmentId === eq.id) return true;
+      if (s.equipmentId != null) return false;
+      if (stock) {
+        return s.client === eq.client || s.reseller === eq.reseller;
+      }
+      return s.client === eq.client;
+    });
+  }, [simCards, equipmentToInstall]);
 
   const confirmInstall = () => {
     if (!equipmentToInstall) return;
@@ -348,10 +371,44 @@ export function EquipmentsPage() {
       setInstallError('Veuillez saisir une immatriculation.');
       return;
     }
+    const eqId = equipmentToInstall.id;
+    const selectedSim = installSimId != null ? simCards.find((s) => s.id === installSimId) : undefined;
     setEquipments((prev) =>
-      prev.map((e) => (e.id === equipmentToInstall.id ? { ...e, isInstalled: true, car: plate } : e))
+      prev.map((e) =>
+        e.id === eqId
+          ? {
+              ...e,
+              isInstalled: true,
+              car: plate,
+              ...(selectedSim
+                ? {
+                    sim: selectedSim.phoneNumber,
+                    simCallNumber: selectedSim.phoneNumber,
+                    iccid: selectedSim.iccid
+                  }
+                : {})
+            }
+          : e
+      )
+    );
+    setSimCards((prev) =>
+      prev.map((s) => {
+        if (s.equipmentId === eqId && s.id !== installSimId) {
+          return { ...s, equipmentId: undefined };
+        }
+        if (installSimId != null && s.id === installSimId) {
+          return {
+            ...s,
+            equipmentId: eqId,
+            client: equipmentToInstall.client,
+            reseller: equipmentToInstall.reseller
+          };
+        }
+        return s;
+      })
     );
     setIsInstallModalOpen(false);
+    setInstallSimId(null);
   };
 
   const uninstallEquipment = (eq: (typeof equipments)[number]) => {
@@ -371,30 +428,12 @@ export function EquipmentsPage() {
     setEquipmentToDelete(null);
   };
 
-  const editAvailableSims = useMemo(() => {
-    if (!equipmentToEdit) return [];
-    const eq = equipmentToEdit;
-    const stock = isStockClientName(eq.client);
-    return simCards.filter((s) => {
-      if (s.equipmentId === eq.id) return true;
-      if (s.equipmentId != null) return false;
-      if (stock) {
-        return s.client === eq.client || s.reseller === eq.reseller;
-      }
-      return s.client === eq.client;
-    });
-  }, [simCards, equipmentToEdit]);
-
   const openEditEquipment = (eq: any) => {
     const client = clients.find((c) => c.name === eq.client && !c.name.endsWith('_Stock'));
     const defaultPackId =
       typeof eq.packId === 'number'
         ? eq.packId
         : client?.packs?.[0]?.packId ?? packs[0]?.id ?? null;
-    const currentSim =
-      simCards.find((s) => s.equipmentId === eq.id) ??
-      simCards.find((s) => s.iccid && s.iccid === eq.iccid);
-    setEditSimId(currentSim?.id ?? null);
     setEquipmentToEdit({ ...eq, packId: defaultPackId ?? eq.packId });
     setIsEditModalOpen(true);
   };
@@ -402,34 +441,7 @@ export function EquipmentsPage() {
   const saveEditEquipment = () => {
     if (!equipmentToEdit) return;
     const eqId = equipmentToEdit.id;
-    const selectedSim = editSimId != null ? simCards.find((s) => s.id === editSimId) : undefined;
-    const updatedEq = {
-      ...equipmentToEdit,
-      ...(selectedSim
-        ? {
-            sim: selectedSim.phoneNumber,
-            simCallNumber: selectedSim.phoneNumber,
-            iccid: selectedSim.iccid
-          }
-        : { sim: '', simCallNumber: '', iccid: '' })
-    };
-    setEquipments((prev) => prev.map((e) => (e.id === eqId ? updatedEq : e)));
-    setSimCards((prev) =>
-      prev.map((s) => {
-        if (s.equipmentId === eqId && s.id !== editSimId) {
-          return { ...s, equipmentId: undefined };
-        }
-        if (editSimId != null && s.id === editSimId) {
-          return {
-            ...s,
-            equipmentId: eqId,
-            client: equipmentToEdit.client,
-            reseller: equipmentToEdit.reseller
-          };
-        }
-        return s;
-      })
-    );
+    setEquipments((prev) => prev.map((e) => (e.id === eqId ? equipmentToEdit : e)));
     setIsEditModalOpen(false);
   };
 
@@ -761,15 +773,6 @@ export function EquipmentsPage() {
                   ))}
                 </select>
               </div>
-              <div className="md:col-span-2">
-                <SimIccidPicker
-                  availableSims={editAvailableSims}
-                  selectedSimId={editSimId}
-                  onSelectSimId={setEditSimId}
-                  simOfferById={simOfferById}
-                  emptyMessage="Aucune puce disponible pour cet équipement."
-                />
-              </div>
             </div>
           </div>
 
@@ -840,9 +843,12 @@ export function EquipmentsPage() {
       {/* Install equipment popup */}
       <Modal
         isOpen={isInstallModalOpen}
-        onClose={() => setIsInstallModalOpen(false)}
+        onClose={() => {
+          setIsInstallModalOpen(false);
+          setInstallSimId(null);
+        }}
         title={`Installer — ${equipmentToInstall?.serial ?? ''}`}
-        size="md"
+        size="lg"
       >
         <div className="space-y-4">
           <div>
@@ -862,6 +868,31 @@ export function EquipmentsPage() {
             <div className="mt-1 text-xs text-slate-500">
               Recherchez dans la liste ou saisissez une nouvelle matricule si elle n’existe pas.
             </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 mb-2 pb-2 border-b border-slate-100 flex items-center gap-2">
+              <Wifi size={16} className="text-slate-400" />
+              Carte SIM
+            </h3>
+            <SimIccidPicker
+              label="N° de série puce (ICCID)"
+              labelClassName="block text-sm font-medium text-slate-700 mb-1"
+              availableSims={installAvailableSims}
+              selectedSimId={installSimId}
+              onSelectSimId={setInstallSimId}
+              simOfferById={simOfferById}
+              simOffers={simOffers}
+              allSimCards={simCards}
+              allowCreate
+              setSimCards={setSimCards}
+              setSimOffers={setSimOffers}
+              createContext={
+                equipmentToInstall
+                  ? buildSimCreateContext(equipmentToInstall.client, equipmentToInstall.reseller)
+                  : undefined
+              }
+              emptyMessage="Aucune puce disponible pour cet équipement."
+            />
           </div>
           {installError && (
             <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{installError}</div>
@@ -1282,23 +1313,35 @@ export function EquipmentsPage() {
                         (s.client === stockName || s.reseller === assignResellerName)
                     );
                   })();
+            const assignReseller =
+              assignMode === 'client'
+                ? clients.find((c) => c.name === assignClientName)?.reseller ?? 'Tunav'
+                : assignResellerName;
             return (
               <div>
-                {clientSims.length === 0 ? (
-                  <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm">
-                    Aucune puce disponible{assignMode === 'client' ? ' pour ce client' : ' pour ce revendeur'}. Ajoutez-en depuis « Gestion des puces ».
-                  </div>
-                ) : (
-                  <SimIccidPicker
-                    optional
-                    labelClassName="block text-sm font-medium text-slate-700 mb-1"
-                    availableSims={clientSims}
-                    selectedSimId={assignSimId}
-                    onSelectSimId={setAssignSimId}
-                    simOfferById={simOfferById}
-                    emptyMessage="Aucune puce disponible."
-                  />
-                )}
+                <SimIccidPicker
+                  optional
+                  labelClassName="block text-sm font-medium text-slate-700 mb-1"
+                  availableSims={clientSims}
+                  selectedSimId={assignSimId}
+                  onSelectSimId={setAssignSimId}
+                  simOfferById={simOfferById}
+                  simOffers={simOffers}
+                  allSimCards={simCards}
+                  allowCreate={assignMode === 'client' && !!assignClientName}
+                  setSimCards={setSimCards}
+                  setSimOffers={setSimOffers}
+                  createContext={
+                    assignMode === 'client' && assignClientName
+                      ? buildSimCreateContext(assignClientName, assignReseller)
+                      : undefined
+                  }
+                  emptyMessage={
+                    clientSims.length === 0
+                      ? `Aucune puce disponible${assignMode === 'client' ? ' pour ce client' : ' pour ce revendeur'}. Saisissez un ICCID et cliquez sur + pour en ajouter une.`
+                      : 'Aucune puce disponible.'
+                  }
+                />
               </div>
             );
           })()}

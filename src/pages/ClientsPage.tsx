@@ -36,16 +36,19 @@ import {
   Fuel,
   Thermometer,
   Activity,
-  Navigation } from
+  Navigation,
+  Smartphone } from
 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { PeriodKey } from '../components/PeriodFilter';
 import { ClientsFilterBar } from '../components/ClientsFilterBar';
+import { SimIccidPicker, type SimCreateContext } from '../components/SimIccidPicker';
 import { useFleetStore, type FleetClient, type FleetEquipment } from '../state/FleetStore';
 import {
   getVisibleClients,
-  getVisibleEquipments
+  getVisibleEquipments,
+  isStockClientName
 } from '../utils/fleetVisibility';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
@@ -602,8 +605,23 @@ function InstallPlateSelect({
 
 }
 export function ClientsPage() {
-  const { currentUserRole, currentUserName, clients: storeClients, equipments, setEquipments } =
-    useFleetStore();
+  const {
+    currentUserRole,
+    currentUserName,
+    clients: storeClients,
+    equipments,
+    setEquipments,
+    simCards,
+    setSimCards,
+    simOffers,
+    setSimOffers
+  } = useFleetStore();
+
+  const buildSimCreateContext = (clientName: string, reseller: string): SimCreateContext => ({
+    clientName,
+    reseller
+  });
+  const simOfferById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
   const isResellerUser = currentUserRole === 'Revendeur';
   const isTunavUser = currentUserRole === 'Tunav';
   // Main Table State
@@ -709,8 +727,42 @@ export function ClientsPage() {
 
   const [clientEquipmentToInstall, setClientEquipmentToInstall] = useState<FleetEquipment | null>(null);
   const [clientInstallPlate, setClientInstallPlate] = useState('');
+  const [clientInstallSimId, setClientInstallSimId] = useState<number | null>(null);
   const [clientInstallError, setClientInstallError] = useState<string | null>(null);
   const [isClientInstallOpen, setIsClientInstallOpen] = useState(false);
+
+  const [clientEquipmentForSimEdit, setClientEquipmentForSimEdit] = useState<FleetEquipment | null>(null);
+  const [clientEditSimId, setClientEditSimId] = useState<number | null>(null);
+  const [isClientEditSimOpen, setIsClientEditSimOpen] = useState(false);
+
+  const availableSimsForEquipment = (eq: FleetEquipment) => {
+    const stock = isStockClientName(eq.client);
+    return simCards.filter((s) => {
+      if (s.equipmentId === eq.id) return true;
+      if (s.equipmentId != null) return false;
+      if (stock) {
+        return s.client === eq.client || s.reseller === eq.reseller;
+      }
+      return s.client === eq.client;
+    });
+  };
+
+  const currentSimIdForEquipment = (eq: FleetEquipment) => {
+    const current =
+      simCards.find((s) => s.equipmentId === eq.id) ??
+      simCards.find((s) => s.iccid && s.iccid === eq.iccid);
+    return current?.id ?? null;
+  };
+
+  const clientInstallAvailableSims = useMemo(() => {
+    if (!clientEquipmentToInstall) return [];
+    return availableSimsForEquipment(clientEquipmentToInstall);
+  }, [simCards, clientEquipmentToInstall]);
+
+  const clientEditSimAvailableSims = useMemo(() => {
+    if (!clientEquipmentForSimEdit) return [];
+    return availableSimsForEquipment(clientEquipmentForSimEdit);
+  }, [simCards, clientEquipmentForSimEdit]);
 
   const clientInstallPlateOptions = useMemo(() => {
     const clientName = clientEquipmentToInstall?.client;
@@ -735,6 +787,7 @@ export function ClientsPage() {
     }
     setClientEquipmentToInstall(eq);
     setClientInstallPlate(eq.car && eq.car !== 'Unassigned' ? eq.car : '');
+    setClientInstallSimId(currentSimIdForEquipment(eq));
     setClientInstallError(null);
     setIsClientInstallOpen(true);
   };
@@ -746,13 +799,95 @@ export function ClientsPage() {
       setClientInstallError('Veuillez saisir une immatriculation.');
       return;
     }
+    const eqId = clientEquipmentToInstall.id;
+    const selectedSim =
+      clientInstallSimId != null ? simCards.find((s) => s.id === clientInstallSimId) : undefined;
     setEquipments((prev) =>
       prev.map((e) =>
-        e.id === clientEquipmentToInstall.id ? { ...e, isInstalled: true, car: plate } : e
+        e.id === eqId
+          ? {
+              ...e,
+              isInstalled: true,
+              car: plate,
+              ...(selectedSim
+                ? {
+                    sim: selectedSim.phoneNumber,
+                    simCallNumber: selectedSim.phoneNumber,
+                    iccid: selectedSim.iccid
+                  }
+                : {})
+            }
+          : e
       )
+    );
+    setSimCards((prev) =>
+      prev.map((s) => {
+        if (s.equipmentId === eqId && s.id !== clientInstallSimId) {
+          return { ...s, equipmentId: undefined };
+        }
+        if (clientInstallSimId != null && s.id === clientInstallSimId) {
+          return {
+            ...s,
+            equipmentId: eqId,
+            client: clientEquipmentToInstall.client,
+            reseller: clientEquipmentToInstall.reseller
+          };
+        }
+        return s;
+      })
     );
     setIsClientInstallOpen(false);
     setClientEquipmentToInstall(null);
+    setClientInstallSimId(null);
+  };
+
+  const openClientEquipmentEditSim = (eq: FleetEquipment) => {
+    setClientEquipmentForSimEdit(eq);
+    setClientEditSimId(currentSimIdForEquipment(eq));
+    setIsClientEditSimOpen(true);
+  };
+
+  const confirmClientEquipmentEditSim = () => {
+    if (!clientEquipmentForSimEdit) return;
+    const eq = clientEquipmentForSimEdit;
+    const eqId = eq.id;
+    const selectedSim =
+      clientEditSimId != null ? simCards.find((s) => s.id === clientEditSimId) : undefined;
+    setEquipments((prev) =>
+      prev.map((e) =>
+        e.id === eqId
+          ? {
+              ...e,
+              ...(selectedSim
+                ? {
+                    sim: selectedSim.phoneNumber,
+                    simCallNumber: selectedSim.phoneNumber,
+                    iccid: selectedSim.iccid
+                  }
+                : { sim: '', simCallNumber: '', iccid: '' })
+            }
+          : e
+      )
+    );
+    setSimCards((prev) =>
+      prev.map((s) => {
+        if (s.equipmentId === eqId && s.id !== clientEditSimId) {
+          return { ...s, equipmentId: undefined };
+        }
+        if (clientEditSimId != null && s.id === clientEditSimId) {
+          return {
+            ...s,
+            equipmentId: eqId,
+            client: eq.client,
+            reseller: eq.reseller
+          };
+        }
+        return s;
+      })
+    );
+    setIsClientEditSimOpen(false);
+    setClientEquipmentForSimEdit(null);
+    setClientEditSimId(null);
   };
 
   const uninstallClientEquipment = (eq: FleetEquipment) => {
@@ -1885,25 +2020,35 @@ export function ClientsPage() {
                           </span>
                         </td>
                         <td className="p-3 text-right">
-                          {eq.isInstalled ? (
+                          <div className="inline-flex items-center justify-end gap-1.5">
                             <button
                               type="button"
-                              onClick={() => uninstallClientEquipment(eq)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+                              onClick={() => openClientEquipmentEditSim(eq)}
+                              title="Modifier la puce"
+                              className="inline-flex items-center justify-center p-1.5 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                             >
-                              <XCircle size={14} />
-                              Désinstaller
+                              <Smartphone size={14} />
                             </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => openClientEquipmentInstall(eq)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
-                            >
-                              <CheckCircle2 size={14} />
-                              Installer
-                            </button>
-                          )}
+                            {eq.isInstalled ? (
+                              <button
+                                type="button"
+                                onClick={() => uninstallClientEquipment(eq)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+                              >
+                                <XCircle size={14} />
+                                Désinstaller
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openClientEquipmentInstall(eq)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                              >
+                                <CheckCircle2 size={14} />
+                                Installer
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1926,9 +2071,10 @@ export function ClientsPage() {
         onClose={() => {
           setIsClientInstallOpen(false);
           setClientEquipmentToInstall(null);
+          setClientInstallSimId(null);
         }}
         title={`Installer — ${clientEquipmentToInstall?.serial ?? ''}`}
-        size="md"
+        size="lg"
       >
         <div className="space-y-4">
           <div>
@@ -1943,6 +2089,34 @@ export function ClientsPage() {
             <p className="mt-1 text-xs text-slate-500">
               Recherchez dans la liste ou ajoutez une nouvelle immatriculation si elle n&apos;existe pas.
             </p>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 mb-2 pb-2 border-b border-slate-100 flex items-center gap-2">
+              <Wifi size={16} className="text-slate-400" />
+              Carte SIM
+            </h3>
+            <SimIccidPicker
+              label="N° de série puce (ICCID)"
+              labelClassName="block text-sm font-medium text-slate-700 mb-1"
+              availableSims={clientInstallAvailableSims}
+              selectedSimId={clientInstallSimId}
+              onSelectSimId={setClientInstallSimId}
+              simOfferById={simOfferById}
+              simOffers={simOffers}
+              allSimCards={simCards}
+              allowCreate
+              setSimCards={setSimCards}
+              setSimOffers={setSimOffers}
+              createContext={
+                clientEquipmentToInstall
+                  ? buildSimCreateContext(
+                      clientEquipmentToInstall.client,
+                      clientEquipmentToInstall.reseller
+                    )
+                  : undefined
+              }
+              emptyMessage="Aucune puce disponible pour ce client."
+            />
           </div>
           {clientInstallError && (
             <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">
@@ -1966,6 +2140,62 @@ export function ClientsPage() {
               className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
             >
               Installer
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isClientEditSimOpen}
+        onClose={() => {
+          setIsClientEditSimOpen(false);
+          setClientEquipmentForSimEdit(null);
+          setClientEditSimId(null);
+        }}
+        title={`Modifier la puce — ${clientEquipmentForSimEdit?.serial ?? ''}`}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <SimIccidPicker
+            label="N° de série puce (ICCID)"
+            labelClassName="block text-sm font-medium text-slate-700 mb-1"
+            availableSims={clientEditSimAvailableSims}
+            selectedSimId={clientEditSimId}
+            onSelectSimId={setClientEditSimId}
+            simOfferById={simOfferById}
+            simOffers={simOffers}
+            allSimCards={simCards}
+            allowCreate
+            setSimCards={setSimCards}
+            setSimOffers={setSimOffers}
+            createContext={
+              clientEquipmentForSimEdit
+                ? buildSimCreateContext(
+                    clientEquipmentForSimEdit.client,
+                    clientEquipmentForSimEdit.reseller
+                  )
+                : undefined
+            }
+            emptyMessage="Aucune puce disponible pour ce client."
+          />
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setIsClientEditSimOpen(false);
+                setClientEquipmentForSimEdit(null);
+                setClientEditSimId(null);
+              }}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={confirmClientEquipmentEditSim}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              Enregistrer
             </button>
           </div>
         </div>
@@ -2238,36 +2468,6 @@ export function ClientsPage() {
                     <option value="true">Installé</option>
                     <option value="false">Non installé</option>
                   </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Carte SIM */}
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
-                <Wifi size={16} className="text-slate-400" />
-                Carte SIM
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    N° d'appel puce
-                  </label>
-                  <input
-                  type="text"
-                  defaultValue={equipmentToEdit.simCallNumber}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    N° de série puce (ICCID)
-                  </label>
-                  <input
-                  type="text"
-                  defaultValue={equipmentToEdit.iccid}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow" />
-                
                 </div>
               </div>
             </div>
