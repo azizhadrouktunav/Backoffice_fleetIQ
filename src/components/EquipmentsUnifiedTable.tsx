@@ -262,14 +262,6 @@ export function EquipmentsUnifiedTable({
                       </button>
                       <button
                         type="button"
-                        onClick={() => onDelete(eq)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                        title="Supprimer"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                      <button
-                        type="button"
                         onClick={() => onViewDetails(eq)}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
                         title="Voir détail"
