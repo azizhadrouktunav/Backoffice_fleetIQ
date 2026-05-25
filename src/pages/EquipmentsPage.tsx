@@ -101,7 +101,6 @@ export function EquipmentsPage() {
   const [filterStatus, setFilterStatus] = useState<EquipmentStatusFilter>('all');
 
   const [equipmentToDelete, setEquipmentToDelete] = useState<any | null>(null);
-  const [assignMode, setAssignMode] = useState<'client' | 'reseller'>('client');
 
   const [equipmentToEdit, setEquipmentToEdit] = useState<any | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -130,10 +129,8 @@ export function EquipmentsPage() {
 
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [stockToAssign, setStockToAssign] = useState<any | null>(null);
-  const [assignClientName, setAssignClientName] = useState<string>('');
-  const [assignResellerName, setAssignResellerName] = useState<string>('');
+  const [assignTargetName, setAssignTargetName] = useState<string>('');
   const [assignError, setAssignError] = useState<string | null>(null);
-  const [assignSimId, setAssignSimId] = useState<number | null>(null);
 
   const [isAddStockOpen, setIsAddStockOpen] = useState(false);
   const [newStock, setNewStock] = useState({
@@ -287,6 +284,19 @@ export function EquipmentsPage() {
     () => resellersList.map((c) => c.name),
     [resellersList]
   );
+
+  const combinedAssignOptions = useMemo(() => {
+    const clientNames = assignableClients.map((c) => c.name);
+    const resellerNames = assignableResellerOptions;
+    return [...clientNames, ...resellerNames].sort((a, b) => a.localeCompare(b));
+  }, [assignableClients, assignableResellerOptions]);
+
+  const assignTargetTypeMap = useMemo(() => {
+    const map = new Map<string, 'client' | 'reseller'>();
+    assignableClients.forEach((c) => map.set(c.name, 'client'));
+    assignableResellerOptions.forEach((n) => map.set(n, 'reseller'));
+    return map;
+  }, [assignableClients, assignableResellerOptions]);
 
   const saveQuotas = () => {
     if (!clientToQuota) return;
@@ -447,22 +457,19 @@ export function EquipmentsPage() {
 
   const openAssign = (eq: any) => {
     setStockToAssign(eq);
-    setAssignMode('client');
-    setAssignClientName('');
-    setAssignResellerName('');
+    setAssignTargetName('');
     setAssignError(null);
-    setAssignSimId(null);
     setIsAssignOpen(true);
   };
 
-  const canAssignToReseller =
-    isTunavUser && stockToAssign != null && isStockEquipment(stockToAssign.client);
-
   const confirmAssign = () => {
-    if (!stockToAssign) return;
+    if (!stockToAssign || !assignTargetName) return;
 
-    if (assignMode === 'client') {
-      const c = clients.find((x) => x.name === assignClientName);
+    const targetType = assignTargetTypeMap.get(assignTargetName);
+    if (!targetType) return;
+
+    if (targetType === 'client') {
+      const c = clients.find((x) => x.name === assignTargetName);
       if (!c) return;
       const limit = c.vehicleLimit;
       const installed = installedCountByClient.get(c.name) ?? 0;
@@ -470,7 +477,6 @@ export function EquipmentsPage() {
         setAssignError(`Limite atteinte: ${installed}/${limit}.`);
         return;
       }
-      const selectedSim = assignSimId != null ? simCards.find((s) => s.id === assignSimId) : undefined;
       setEquipments((prev) =>
         prev.map((e) =>
           e.id === stockToAssign.id
@@ -480,32 +486,15 @@ export function EquipmentsPage() {
                 reseller: c.reseller,
                 car: 'Unassigned',
                 isInstalled: false,
-                packId: e.packId ?? c.packs?.[0]?.packId,
-                ...(selectedSim
-                  ? {
-                      sim: selectedSim.phoneNumber,
-                      simCallNumber: selectedSim.phoneNumber,
-                      iccid: selectedSim.iccid
-                    }
-                  : {})
+                packId: e.packId ?? c.packs?.[0]?.packId
               }
             : e
         )
       );
-      if (selectedSim) {
-        setSimCards((prev) =>
-          prev.map((s) =>
-            s.id === selectedSim.id
-              ? { ...s, equipmentId: stockToAssign.id, client: c.name, reseller: c.reseller }
-              : s
-          )
-        );
-      }
     } else {
       if (!isTunavUser) return;
-      const r = clients.find((x) => x.type === 'Revendeur' && x.name === assignResellerName);
+      const r = clients.find((x) => x.type === 'Revendeur' && x.name === assignTargetName);
       if (!r) return;
-      const selectedSim = assignSimId != null ? simCards.find((s) => s.id === assignSimId) : undefined;
       setEquipments((prev) =>
         prev.map((e) =>
           e.id === stockToAssign.id
@@ -514,27 +503,11 @@ export function EquipmentsPage() {
                 reseller: r.name,
                 client: `${r.name}_Stock`,
                 car: 'Unassigned',
-                isInstalled: false,
-                ...(selectedSim
-                  ? {
-                      sim: selectedSim.phoneNumber,
-                      simCallNumber: selectedSim.phoneNumber,
-                      iccid: selectedSim.iccid
-                    }
-                  : {})
+                isInstalled: false
               }
             : e
         )
       );
-      if (selectedSim) {
-        setSimCards((prev) =>
-          prev.map((s) =>
-            s.id === selectedSim.id
-              ? { ...s, equipmentId: stockToAssign.id, client: `${r.name}_Stock`, reseller: r.name }
-              : s
-          )
-        );
-      }
     }
     setIsAssignOpen(false);
   };
@@ -749,8 +722,9 @@ export function EquipmentsPage() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Numéro de série (IMEI)</label>
                 <input
                   value={equipmentToEdit?.serial ?? ''}
-                  onChange={(e) => setEquipmentToEdit((p: any) => ({ ...p, serial: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  readOnly
+                  disabled
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                 />
               </div>
               <div className="md:col-span-2">
@@ -1232,119 +1206,18 @@ export function EquipmentsPage() {
           <div className="text-sm text-slate-700">
             Équipement: <strong>{stockToAssign?.serial}</strong>
           </div>
-          {canAssignToReseller && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Type d&apos;affectation</label>
-              <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssignMode('client');
-                    setAssignResellerName('');
-                    setAssignSimId(null);
-                    setAssignError(null);
-                  }}
-                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                    assignMode === 'client'
-                      ? 'bg-white text-blue-700 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Client
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssignMode('reseller');
-                    setAssignClientName('');
-                    setAssignSimId(null);
-                    setAssignError(null);
-                  }}
-                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                    assignMode === 'reseller'
-                      ? 'bg-white text-purple-700 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Revendeur
-                </button>
-              </div>
-            </div>
-          )}
-          {assignMode === 'client' ? (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
-              <SearchableSelect
-                value={assignClientName}
-                onChange={(v) => {
-                  setAssignClientName(v);
-                  setAssignSimId(null);
-                }}
-                options={assignableClients.map((c) => c.name)}
-                placeholder="Rechercher et sélectionner un client…"
-              />
-            </div>
-          ) : (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Revendeur</label>
-              <SearchableSelect
-                value={assignResellerName}
-                onChange={(v) => {
-                  setAssignResellerName(v);
-                  setAssignSimId(null);
-                }}
-                options={assignableResellerOptions}
-                placeholder="Rechercher et sélectionner un revendeur…"
-              />
-            </div>
-          )}
-
-          {((assignMode === 'client' && assignClientName) ||
-            (assignMode === 'reseller' && assignResellerName)) &&
-            (() => {
-            const clientSims =
-              assignMode === 'client'
-                ? simCards.filter((s) => s.client === assignClientName && s.equipmentId == null)
-                : (() => {
-                    const stockName = `${assignResellerName}_Stock`;
-                    return simCards.filter(
-                      (s) =>
-                        s.equipmentId == null &&
-                        (s.client === stockName || s.reseller === assignResellerName)
-                    );
-                  })();
-            const assignReseller =
-              assignMode === 'client'
-                ? clients.find((c) => c.name === assignClientName)?.reseller ?? 'Tunav'
-                : assignResellerName;
-            return (
-              <div>
-                <SimIccidPicker
-                  optional
-                  labelClassName="block text-sm font-medium text-slate-700 mb-1"
-                  availableSims={clientSims}
-                  selectedSimId={assignSimId}
-                  onSelectSimId={setAssignSimId}
-                  simOfferById={simOfferById}
-                  simOffers={simOffers}
-                  allSimCards={simCards}
-                  allowCreate={assignMode === 'client' && !!assignClientName}
-                  setSimCards={setSimCards}
-                  setSimOffers={setSimOffers}
-                  createContext={
-                    assignMode === 'client' && assignClientName
-                      ? buildSimCreateContext(assignClientName, assignReseller)
-                      : undefined
-                  }
-                  emptyMessage={
-                    clientSims.length === 0
-                      ? `Aucune puce disponible${assignMode === 'client' ? ' pour ce client' : ' pour ce revendeur'}. Saisissez un ICCID et cliquez sur + pour en ajouter une.`
-                      : 'Aucune puce disponible.'
-                  }
-                />
-              </div>
-            );
-          })()}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Client / Revendeur</label>
+            <SearchableSelect
+              value={assignTargetName}
+              onChange={(v) => {
+                setAssignTargetName(v);
+                setAssignError(null);
+              }}
+              options={combinedAssignOptions}
+              placeholder="Rechercher et sélectionner un client ou revendeur…"
+            />
+          </div>
 
           {assignError && <div className="bg-red-50 text-red-800 border border-red-200 rounded-lg p-3 text-sm">{assignError}</div>}
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
@@ -1357,7 +1230,7 @@ export function EquipmentsPage() {
             <button
               onClick={confirmAssign}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-              disabled={assignMode === 'client' ? !assignClientName : !assignResellerName}
+              disabled={!assignTargetName}
             >
               Confirmer
             </button>
