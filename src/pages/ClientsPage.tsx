@@ -1005,7 +1005,6 @@ export function ClientsPage() {
     setAllVehicles(updateFn);
     setIsInstallEquipmentModalOpen(false);
   };
-  // View Equipment Details Handler
   const openViewEquipmentDetailsModal = (vehicle: any) => {
     const eqSerial = vehicle.equipment;
     if (eqSerial && eqSerial !== '-') {
@@ -1028,6 +1027,13 @@ export function ClientsPage() {
     setShowPositionMap(false);
     setIsViewEquipmentModalOpen(true);
   };
+
+  const openClientAssignedEquipmentDetails = (eq: FleetEquipment) => {
+    setEquipmentToView(eq);
+    setShowPositionMap(false);
+    setIsViewEquipmentModalOpen(true);
+  };
+
   const openConfigModal = (vehicle: any) => {
     setVehicleToConfig(vehicle);
     // Reset config states to default
@@ -2032,38 +2038,48 @@ export function ClientsPage() {
                           </span>
                         </td>
                         <td className="p-3 text-right">
-                          <div className="inline-flex items-center justify-end gap-1.5">
+                          <div className="inline-flex items-center justify-end gap-1">
+                            {permissions?.clients.canViewEquipments && (
+                              <button
+                                type="button"
+                                onClick={() => openClientAssignedEquipmentDetails(eq)}
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                                title="Voir détail"
+                              >
+                                <Eye size={16} />
+                              </button>
+                            )}
                             {permissions?.clients.canEditEquipmentSim && (
-                            <button
-                              type="button"
-                              onClick={() => openClientEquipmentEditSim(eq)}
-                              title="Modifier la puce"
-                              className="inline-flex items-center justify-center p-1.5 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-                            >
-                              <Smartphone size={14} />
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => openClientEquipmentEditSim(eq)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                title="Modifier la puce"
+                              >
+                                <Smartphone size={16} />
+                              </button>
                             )}
                             {eq.isInstalled ? (
                               permissions?.clients.canUninstallEquipment && (
-                              <button
-                                type="button"
-                                onClick={() => uninstallClientEquipment(eq)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
-                              >
-                                <XCircle size={14} />
-                                Désinstaller
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => uninstallClientEquipment(eq)}
+                                  className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
+                                  title="Désinstaller"
+                                >
+                                  <XCircle size={16} />
+                                </button>
                               )
                             ) : (
                               permissions?.clients.canInstallEquipment && (
-                              <button
-                                type="button"
-                                onClick={() => openClientEquipmentInstall(eq)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
-                              >
-                                <CheckCircle2 size={14} />
-                                Installer
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openClientEquipmentInstall(eq)}
+                                  className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                                  title="Installer"
+                                >
+                                  <CheckCircle2 size={16} />
+                                </button>
                               )
                             )}
                           </div>
@@ -2897,6 +2913,7 @@ export function ClientsPage() {
           }
 
             <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              {equipmentToView.isInstalled && (
               <button
               onClick={() => setShowPositionMap(!showPositionMap)}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${showPositionMap ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}>
@@ -2904,6 +2921,7 @@ export function ClientsPage() {
                 <MapPin size={16} />
                 {showPositionMap ? 'Masquer la position' : 'Voir position'}
               </button>
+              )}
               <button
               onClick={() => setIsViewEquipmentModalOpen(false)}
               className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">

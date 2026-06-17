@@ -16,7 +16,9 @@ import {
   Link2,
   Unlink,
   ArrowLeftRight,
-  X
+  X,
+  FileSpreadsheet,
+  FileText
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
@@ -32,8 +34,15 @@ import {
   getAssignableSimTargets,
   getSimAssignmentClientName
 } from '../utils/fleetAssignment';
-
-type SimStatus = 'assigned_equipment' | 'assigned_client' | 'stock';
+import {
+  exportSimsToExcel,
+  exportSimsToPdf,
+  filterSimsByKpi,
+  getSimStatus,
+  kpiExportFilename,
+  type SimKpiKey,
+  type SimStatus
+} from '../utils/simTableExport';
 
 const STATUS_META: Record<SimStatus, { label: string; badge: string; dot: string }> = {
   assigned_equipment: {
@@ -54,12 +63,6 @@ const STATUS_META: Record<SimStatus, { label: string; badge: string; dot: string
 };
 
 const OPERATORS = ['Télécom', 'Orange', 'Ooredoo'];
-
-function getSimStatus(sim: SimCard): SimStatus {
-  if (sim.equipmentId != null) return 'assigned_equipment';
-  if (sim.client.endsWith('_Stock')) return 'stock';
-  return 'assigned_client';
-}
 
 function formatPrice(value: number) {
   return new Intl.NumberFormat('fr-FR', {
@@ -474,6 +477,25 @@ export function SimsPage() {
     setSimToDelete(null);
   };
 
+  const exportFilteredExcel = () => {
+    exportSimsToExcel(filteredSims, offerById, 'puces-export.xlsx', equipmentById);
+  };
+
+  const exportFilteredPdf = () => {
+    exportSimsToPdf(
+      filteredSims,
+      offerById,
+      'Gestion des puces — export',
+      'puces-export.pdf',
+      equipmentById
+    );
+  };
+
+  const exportKpiExcel = (kpi: SimKpiKey) => {
+    const sims = filterSimsByKpi(visibleSims, kpi);
+    exportSimsToExcel(sims, offerById, kpiExportFilename(kpi), equipmentById);
+  };
+
   return (
     <div className="space-y-6 pb-8">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -484,6 +506,22 @@ export function SimsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={exportFilteredExcel}
+            className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+          >
+            <FileSpreadsheet size={16} />
+            Exporter Excel
+          </button>
+          <button
+            type="button"
+            onClick={exportFilteredPdf}
+            className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+          >
+            <FileText size={16} />
+            Exporter PDF
+          </button>
           {canManageSims && (
           <>
           <button
@@ -510,32 +548,36 @@ export function SimsPage() {
         <StatCard
           title="Total puces"
           value={totalSims.toString()}
-          subtitle="Puces gérées"
+          subtitle="Puces gérées — clic pour exporter Excel"
           icon={Smartphone}
+          onClick={() => exportKpiExcel('total')}
         />
         <StatCard
           title="Affectées à un équipement"
           value={assignedToEquipment.toString()}
           trend={`${totalSims ? Math.round((assignedToEquipment / totalSims) * 100) : 0}%`}
           trendUp={true}
-          subtitle="Puces en service"
+          subtitle="Puces en service — clic pour exporter Excel"
           icon={Wifi}
+          onClick={() => exportKpiExcel('assigned_equipment')}
         />
         <StatCard
           title="Non affectées"
           value={assignedNoEquipment.toString()}
           trend={`${totalSims ? Math.round((assignedNoEquipment / totalSims) * 100) : 0}%`}
           trendUp={false}
-          subtitle="Client défini, sans équipement"
+          subtitle="Client défini, sans équipement — clic pour exporter Excel"
           icon={Link2}
+          onClick={() => exportKpiExcel('assigned_client')}
         />
         <StatCard
           title="En stock"
           value={inStockSims.toString()}
           trend={`${totalSims ? Math.round((inStockSims / totalSims) * 100) : 0}%`}
           trendUp={true}
-          subtitle="Disponibles à l'affectation"
+          subtitle="Disponibles à l'affectation — clic pour exporter Excel"
           icon={Boxes}
+          onClick={() => exportKpiExcel('stock')}
         />
       </div>
 

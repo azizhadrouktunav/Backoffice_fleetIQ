@@ -1179,6 +1179,7 @@ export function EquipmentsPage() {
 
             {/* Footer actions */}
             <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+              {equipmentToView.isInstalled && (
               <button
                 onClick={() => setShowPositionMap(!showPositionMap)}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
@@ -1190,6 +1191,7 @@ export function EquipmentsPage() {
                 <MapPin size={16} />
                 {showPositionMap ? 'Masquer la position' : 'Voir position'}
               </button>
+              )}
               <button
                 onClick={() => {
                   setIsDetailsModalOpen(false);

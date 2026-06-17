@@ -5,7 +5,7 @@ import { SearchableSelect } from '../components/SearchableSelect';
 import { Users, Server, WifiOff, Building2, AlertCircle, UserX, Settings } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useFleetStore } from '../state/FleetStore';
-import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
+import { useBackofficePermissions, useBackofficeRole } from '../hooks/useBackofficePermissions';
 
 type DisconnectedEquipment = {
   id: number;
@@ -267,9 +267,12 @@ function periodLabel(period: PeriodKey): string {
 }
 
 export function DashboardPage() {
-  const { disconnectThresholdHours, setDisconnectThresholdHours } = useFleetStore();
+  const { disconnectThresholdHours, setDisconnectThresholdHours, clients, currentUserName } =
+    useFleetStore();
   const permissions = useBackofficePermissions();
+  const backofficeRole = useBackofficeRole();
   const isAdmin = permissions?.dashboard.canViewAdminSections ?? false;
+  const isResellerUser = backofficeRole === 'revendeur';
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDisconnectedClientsModalOpen, setIsDisconnectedClientsModalOpen] = useState(false);
@@ -290,7 +293,20 @@ export function DashboardPage() {
   const [resellerEndDate, setResellerEndDate] = useState('');
 
   const tunavStats = tunavStatsByPeriod[tunavPeriod];
-  const resellerStats = selectedReseller ? resellerStatsByPeriod[resellerPeriod] : null;
+  const soloResellerStats = resellerStatsByPeriod[resellerPeriod];
+  const resellerStats = selectedReseller || isResellerUser ? soloResellerStats : null;
+
+  const resellerClientNames = useMemo(() => {
+    const names = new Set<string>([currentUserName]);
+    for (const c of clients) {
+      if (c.reseller === currentUserName) names.add(c.name);
+    }
+    return names;
+  }, [clients, currentUserName]);
+
+  const resellerDisplayName = isResellerUser
+    ? currentUserName
+    : mockResellers.find((r) => r.id === selectedReseller)?.name;
 
   const thresholdSuffix = disconnectThresholdSuffix(disconnectThresholdHours);
 
@@ -303,13 +319,18 @@ export function DashboardPage() {
   );
 
   const scopeBySource = useMemo(() => {
-    if (modalSource === 'reseller' && selectedReseller) {
-      const reseller = mockResellers.find((r) => r.id === selectedReseller);
-      if (!reseller) return allThresholdDisconnected;
-      return allThresholdDisconnected.filter((eq) => eq.client === reseller.name);
+    if (modalSource === 'reseller') {
+      if (isResellerUser) {
+        return allThresholdDisconnected.filter((eq) => resellerClientNames.has(eq.client));
+      }
+      if (selectedReseller) {
+        const reseller = mockResellers.find((r) => r.id === selectedReseller);
+        if (!reseller) return allThresholdDisconnected;
+        return allThresholdDisconnected.filter((eq) => eq.client === reseller.name);
+      }
     }
     return allThresholdDisconnected;
-  }, [modalSource, selectedReseller, allThresholdDisconnected]);
+  }, [modalSource, selectedReseller, isResellerUser, resellerClientNames, allThresholdDisconnected]);
 
   const scopeDisconnected = scopeBySource;
 
@@ -333,11 +354,14 @@ export function DashboardPage() {
   );
 
   const resellerScopeDisconnected = useMemo(() => {
+    if (isResellerUser) {
+      return allThresholdDisconnected.filter((eq) => resellerClientNames.has(eq.client));
+    }
     if (!selectedReseller) return [];
     const reseller = mockResellers.find((r) => r.id === selectedReseller);
     if (!reseller) return [];
     return allThresholdDisconnected.filter((eq) => eq.client === reseller.name);
-  }, [selectedReseller, allThresholdDisconnected]);
+  }, [isResellerUser, resellerClientNames, selectedReseller, allThresholdDisconnected]);
 
   const resellerDisconnectedEquipments = useMemo(
     () =>
@@ -417,13 +441,13 @@ export function DashboardPage() {
   const disconnectPeriodLabel = periodLabel(disconnectPeriod);
 
   const equipmentModalTitle =
-    modalSource === 'reseller' && selectedReseller
-      ? `Équipements Déconnectés — ${mockResellers.find((r) => r.id === selectedReseller)?.name}`
+    modalSource === 'reseller' && resellerDisplayName
+      ? `Équipements Déconnectés — ${resellerDisplayName}`
       : `Équipements Déconnectés ${thresholdSuffix}`;
 
   const clientsModalTitle =
-    modalSource === 'reseller' && selectedReseller
-      ? `Clients déconnectés — ${mockResellers.find((r) => r.id === selectedReseller)?.name}`
+    modalSource === 'reseller' && resellerDisplayName
+      ? `Clients déconnectés — ${resellerDisplayName}`
       : `Clients déconnectés ${thresholdSuffix}`;
 
   const openThresholdModal = () => {
@@ -458,6 +482,7 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {!isResellerUser && (
       <section>
         <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -516,7 +541,66 @@ export function DashboardPage() {
           />
         </div>
       </section>
+      )}
 
+      {isResellerUser ? (
+        <section>
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-6 bg-indigo-600 rounded-full" />
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Mon tableau de bord — {currentUserName}
+                </h2>
+              </div>
+              <p className="text-sm text-slate-500 ml-4 mt-1">
+                Statistiques de votre périmètre revendeur uniquement
+              </p>
+            </div>
+            <PeriodFilter
+              variant="inline"
+              hideToday
+              value={resellerPeriod}
+              onChange={setResellerPeriod}
+              startDate={resellerStartDate}
+              endDate={resellerEndDate}
+              onStartDateChange={setResellerStartDate}
+              onEndDateChange={setResellerEndDate}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              title="Mes Clients"
+              value={soloResellerStats.clients}
+              subtitle={`Clients actifs sur ${periodLabel(resellerPeriod)}`}
+              icon={Users}
+            />
+            <StatCard
+              title="Mes Équipements"
+              value={soloResellerStats.equipments}
+              subtitle={`Total déployé sur ${periodLabel(resellerPeriod)}`}
+              icon={Server}
+            />
+            <StatCard
+              title="Équipements Déconnectés"
+              value={String(resellerDisconnectedEquipments.length)}
+              subtitle={`Déconnectés ${thresholdSuffix} sur ${periodLabel(resellerPeriod)}`}
+              icon={WifiOff}
+              color="red"
+              onClick={() => openDisconnectedModal('reseller')}
+            />
+            <StatCard
+              title="Clients Déconnectés"
+              value={String(resellerDisconnectedClientsCount)}
+              subtitle={`Comptes clients ${thresholdSuffix} sur ${periodLabel(resellerPeriod)}`}
+              icon={UserX}
+              color="red"
+              onClick={() => openDisconnectedClientsModal('reseller')}
+            />
+          </div>
+        </section>
+      ) : (
       <section className="pt-6 border-t border-slate-200">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -601,6 +685,7 @@ export function DashboardPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* Modal équipements déconnectés */}
       <Modal isOpen={isModalOpen} onClose={closeDisconnectedModal} title={equipmentModalTitle} size="xl">
