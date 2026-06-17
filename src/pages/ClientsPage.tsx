@@ -45,6 +45,7 @@ import { PeriodKey } from '../components/PeriodFilter';
 import { ClientsFilterBar } from '../components/ClientsFilterBar';
 import { SimIccidPicker, type SimCreateContext } from '../components/SimIccidPicker';
 import { useFleetStore, type FleetClient, type FleetEquipment } from '../state/FleetStore';
+import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
 import {
   getVisibleClients,
   getVisibleEquipments,
@@ -616,6 +617,7 @@ export function ClientsPage() {
     simOffers,
     setSimOffers
   } = useFleetStore();
+  const permissions = useBackofficePermissions();
 
   const buildSimCreateContext = (clientName: string, reseller: string): SimCreateContext => ({
     clientName,
@@ -1173,6 +1175,7 @@ export function ClientsPage() {
         <h1 className="text-xl font-semibold text-slate-900">
           Gestion Clients
         </h1>
+        {permissions?.clients.canAddEdit && (
         <button
           onClick={() => openAddEditModal()}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm">
@@ -1180,6 +1183,7 @@ export function ClientsPage() {
           <Plus size={16} />
           Ajouter un client
         </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -1332,6 +1336,7 @@ export function ClientsPage() {
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      {permissions?.clients.canAddEdit && (
                       <button
                       onClick={() => openAddEditModal(enrichClientForModal(client))}
                       className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
@@ -1339,6 +1344,8 @@ export function ClientsPage() {
                       
                         <Edit2 size={16} />
                       </button>
+                      )}
+                      {permissions?.clients.canViewDetails && (
                       <button
                       onClick={() => openViewModal(enrichClientForModal(client))}
                       className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
@@ -1346,6 +1353,8 @@ export function ClientsPage() {
                       
                         <Eye size={16} />
                       </button>
+                      )}
+                      {permissions?.clients.canViewEquipments && (
                       <button
                       onClick={() => openClientEquipmentsModal(client)}
                       className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
@@ -1353,6 +1362,8 @@ export function ClientsPage() {
                       
                         <Cpu size={16} />
                       </button>
+                      )}
+                      {permissions?.clients.canManagePayment && (
                       <button
                       onClick={() => openPaymentModal(enrichClientForModal(client))}
                       className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
@@ -1360,6 +1371,7 @@ export function ClientsPage() {
                       
                         <CreditCard size={16} />
                       </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -2021,6 +2033,7 @@ export function ClientsPage() {
                         </td>
                         <td className="p-3 text-right">
                           <div className="inline-flex items-center justify-end gap-1.5">
+                            {permissions?.clients.canEditEquipmentSim && (
                             <button
                               type="button"
                               onClick={() => openClientEquipmentEditSim(eq)}
@@ -2029,7 +2042,9 @@ export function ClientsPage() {
                             >
                               <Smartphone size={14} />
                             </button>
+                            )}
                             {eq.isInstalled ? (
+                              permissions?.clients.canUninstallEquipment && (
                               <button
                                 type="button"
                                 onClick={() => uninstallClientEquipment(eq)}
@@ -2038,7 +2053,9 @@ export function ClientsPage() {
                                 <XCircle size={14} />
                                 Désinstaller
                               </button>
+                              )
                             ) : (
+                              permissions?.clients.canInstallEquipment && (
                               <button
                                 type="button"
                                 onClick={() => openClientEquipmentInstall(eq)}
@@ -2047,6 +2064,7 @@ export function ClientsPage() {
                                 <CheckCircle2 size={14} />
                                 Installer
                               </button>
+                              )
                             )}
                           </div>
                         </td>

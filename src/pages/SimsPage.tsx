@@ -26,6 +26,7 @@ import {
   type SimRowContextMenuState
 } from '../components/SimTableContextMenu';
 import { SimCard, SimOffer, useFleetStore } from '../state/FleetStore';
+import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
 import { clientSimOfferName, simHasClientSimOffer } from '../components/SimIccidPicker';
 import {
   getAssignableSimTargets,
@@ -80,6 +81,8 @@ export function SimsPage() {
     simCards,
     setSimCards
   } = useFleetStore();
+  const permissions = useBackofficePermissions();
+  const canManageSims = permissions?.sims.canManage ?? false;
 
   const isTunavUser = currentUserRole === 'Tunav';
 
@@ -481,6 +484,8 @@ export function SimsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {canManageSims && (
+          <>
           <button
             onClick={() => setIsOffersListOpen(true)}
             className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
@@ -495,6 +500,8 @@ export function SimsPage() {
             <Plus size={16} />
             Ajouter une puce
           </button>
+          </>
+          )}
         </div>
       </div>
 
@@ -844,6 +851,7 @@ export function SimsPage() {
                       </span>
                     </td>
                     <td className="p-4 text-right">
+                      {canManageSims && (
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => openEditSim(sim)}
@@ -879,6 +887,7 @@ export function SimsPage() {
                           <Trash2 size={16} />
                         </button>
                       </div>
+                      )}
                     </td>
                   </tr>
                 );

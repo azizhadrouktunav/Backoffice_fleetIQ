@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
+import type { BackofficeRole } from '../utils/backofficePermissions';
 
 export type EquipmentType =
   | 'ETX'
@@ -693,6 +694,8 @@ type FleetStore = {
   setCurrentUserRole: React.Dispatch<React.SetStateAction<'Tunav' | 'Revendeur'>>;
   currentUserName: string; // "Tunav" ou nom revendeur
   setCurrentUserName: React.Dispatch<React.SetStateAction<string>>;
+  backofficeRole: BackofficeRole | null;
+  setBackofficeRole: React.Dispatch<React.SetStateAction<BackofficeRole | null>>;
   /** Délai sans connexion plateforme pour considérer un client / équipement comme déconnecté */
   disconnectThresholdHours: number;
   setDisconnectThresholdHours: (hours: number) => void;
@@ -718,6 +721,19 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     const raw = typeof window !== 'undefined' ? window.localStorage.getItem('fleet_user') : null;
     return raw && raw.trim() ? raw : 'Tunav';
   });
+  const [backofficeRole, setBackofficeRole] = useState<BackofficeRole | null>(() => {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem('backoffice_role') : null;
+    if (
+      raw === 'admin_tunav' ||
+      raw === 'responsable_sav' ||
+      raw === 'technicien_sav' ||
+      raw === 'revendeur' ||
+      raw === 'finance_tunav'
+    ) {
+      return raw;
+    }
+    return null;
+  });
 
   const [disconnectThresholdHours, setDisconnectThresholdHoursState] = useState<number>(
     readDisconnectThresholdHours
@@ -738,10 +754,15 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     try {
       window.localStorage.setItem('fleet_role', currentUserRole);
       window.localStorage.setItem('fleet_user', currentUserName);
+      if (backofficeRole) {
+        window.localStorage.setItem('backoffice_role', backofficeRole);
+      } else {
+        window.localStorage.removeItem('backoffice_role');
+      }
     } catch {
       // ignore
     }
-  }, [currentUserRole, currentUserName]);
+  }, [currentUserRole, currentUserName, backofficeRole]);
 
   const packs = useMemo(() => initialPacks, []);
   const packsById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
@@ -882,6 +903,8 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
       setCurrentUserRole,
       currentUserName,
       setCurrentUserName,
+      backofficeRole,
+      setBackofficeRole,
       disconnectThresholdHours,
       setDisconnectThresholdHours,
       packs,
@@ -897,6 +920,7 @@ export function FleetStoreProvider({ children }: { children: React.ReactNode }) 
     [
       currentUserRole,
       currentUserName,
+      backofficeRole,
       disconnectThresholdHours,
       packs,
       clients,

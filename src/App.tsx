@@ -6,16 +6,23 @@ import { ClientsPage } from './pages/ClientsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { EquipmentsPage } from './pages/EquipmentsPage';
 import { SimsPage } from './pages/SimsPage';
-import { LoginPage, BackofficeRole, LoginContext } from './pages/LoginPage';
+import { LoginPage, LoginContext } from './pages/LoginPage';
 import { useFleetStore } from './state/FleetStore';
+import {
+  canAccessRoute,
+  getDefaultRoute,
+  type BackofficeRole,
+  type BackofficeRouteKey
+} from './utils/backofficePermissions';
 
 export function App() {
-  const { setCurrentUserRole, setCurrentUserName } = useFleetStore();
+  const { setCurrentUserRole, setCurrentUserName, setBackofficeRole } = useFleetStore();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentRole, setCurrentRole] = useState<BackofficeRole | null>(null);
 
   const handleLogin = (ctx: LoginContext) => {
     setCurrentRole(ctx.role);
+    setBackofficeRole(ctx.role);
     setIsAuthenticated(true);
     try {
       sessionStorage.setItem('backoffice_role', ctx.role);
@@ -29,6 +36,7 @@ export function App() {
     setCurrentRole(null);
     setCurrentUserRole('Tunav');
     setCurrentUserName('Tunav');
+    setBackofficeRole(null);
     try {
       sessionStorage.removeItem('backoffice_role');
     } catch {
@@ -40,28 +48,8 @@ export function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  // Build allowed routes based on role
-  const canAccess = (route: 'dashboard' | 'clients' | 'subscriptions' | 'equipments' | 'sims') => {
-    switch (currentRole) {
-      case 'admin_tunav':
-        return true;
-      case 'revendeur':
-        return route !== 'subscriptions';
-      case 'sav_tunav':
-        return route === 'dashboard' || route === 'equipments' || route === 'sims';
-      case 'finance_tunav':
-        return route === 'dashboard' || route === 'clients' || route === 'subscriptions';
-      default:
-        return false;
-    }
-  };
-
-  const defaultRoute =
-    currentRole === 'sav_tunav'
-      ? '/equipments'
-      : currentRole === 'finance_tunav'
-      ? '/subscriptions'
-      : '/dashboard';
+  const canAccess = (route: BackofficeRouteKey) => canAccessRoute(currentRole, route);
+  const defaultRoute = getDefaultRoute(currentRole);
 
   return (
     <Router>

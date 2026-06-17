@@ -32,6 +32,7 @@ import { EquipmentsUnifiedTable } from '../components/EquipmentsUnifiedTable';
 import { SimIccidPicker, type SimCreateContext } from '../components/SimIccidPicker';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { EquipmentType, useFleetStore } from '../state/FleetStore';
+import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
 import { getVisibleEquipments, isStockClientName } from '../utils/fleetVisibility';
 import {
   MapContainer as MapContainerBase,
@@ -85,6 +86,7 @@ export function EquipmentsPage() {
     simOffers,
     setSimOffers
   } = useFleetStore();
+  const permissions = useBackofficePermissions();
   const packById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
   const simOfferById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
   const isTunavUser = currentUserRole === 'Tunav';
@@ -563,7 +565,7 @@ export function EquipmentsPage() {
           <h1 className="text-xl font-semibold text-slate-900">Gestion des Équipements</h1>
           <p className="text-sm text-slate-500 mt-1">Vue unifiée des équipements, affectations et stock.</p>
         </div>
-        {isTunavUser && (
+        {permissions?.equipments.canAdd && (
           <button
             onClick={openAddStock}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
@@ -605,6 +607,15 @@ export function EquipmentsPage() {
         simByEquipmentId={simByEquipmentId}
         packById={packById}
         isTunavUser={isTunavUser}
+        actionPermissions={
+          permissions?.equipments ?? {
+            canAdd: false,
+            canEdit: false,
+            canAssign: false,
+            canReturnToStock: false,
+            canViewDetails: false
+          }
+        }
         filterEquipmentType={filterEquipmentType}
         setFilterEquipmentType={setFilterEquipmentType}
         filterClientReseller={filterClientReseller}

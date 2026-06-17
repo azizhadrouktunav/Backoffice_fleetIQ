@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useFleetStore } from '../state/FleetStore';
+import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
 
 type FeatureNode = {
   id: string;
@@ -495,6 +496,8 @@ const initialClients: ClientWithPack[] = [
 
 export function SubscriptionsPage() {
   const { currentUserRole, currentUserName, packs: basePacks, clients: allClients, setClients } = useFleetStore();
+  const permissions = useBackofficePermissions();
+  const canManagePacks = permissions?.subscriptions.canManage ?? false;
   const allLeafFeatureIds = useMemo(() => flattenLeafIds(FEATURE_CATALOG), []);
   const equipmentTypes = useMemo(
     () =>
@@ -891,6 +894,7 @@ export function SubscriptionsPage() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {canManagePacks && (
                     <button
                       onClick={() => openEditPackModal(pack)}
                       className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
@@ -898,6 +902,7 @@ export function SubscriptionsPage() {
                     >
                       <Edit2 size={16} />
                     </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -980,6 +985,7 @@ export function SubscriptionsPage() {
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {canManagePacks && (
                           <button
                             onClick={() => openAssignModal(client)}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
@@ -987,6 +993,8 @@ export function SubscriptionsPage() {
                           >
                             <Edit2 size={16} />
                           </button>
+                          )}
+                          {permissions?.clients.canManagePayment && (
                           <button
                             onClick={() => openPaymentModal(client)}
                             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
@@ -994,6 +1002,7 @@ export function SubscriptionsPage() {
                           >
                             <CreditCard size={16} />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -13,12 +13,9 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useFleetStore } from '../state/FleetStore';
+import type { BackofficeRole } from '../utils/backofficePermissions';
 
-export type BackofficeRole =
-  | 'sav_tunav'
-  | 'revendeur'
-  | 'admin_tunav'
-  | 'finance_tunav';
+export type { BackofficeRole };
 
 interface RoleDefinition {
   id: BackofficeRole;
@@ -43,14 +40,24 @@ const ROLES: RoleDefinition[] = [
     glow: 'shadow-cyan-500/40'
   },
   {
-    id: 'sav_tunav',
-    label: 'SAV TUNAV',
+    id: 'responsable_sav',
+    label: 'Responsable SAV',
     sublabel: 'Service Après-Vente',
-    description: 'Suivi des interventions et support technique',
+    description: 'Gestion complète sauf validation des paiements',
     icon: Wrench,
     gradient: 'from-emerald-500 to-teal-600',
     accent: 'text-emerald-300',
     glow: 'shadow-emerald-500/40'
+  },
+  {
+    id: 'technicien_sav',
+    label: 'Technicien SAV',
+    sublabel: 'Installation terrain',
+    description: 'Consultation clients et installation des équipements',
+    icon: Wrench,
+    gradient: 'from-lime-500 to-green-600',
+    accent: 'text-lime-300',
+    glow: 'shadow-lime-500/40'
   },
   {
     id: 'revendeur',
@@ -84,7 +91,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
-  const { clients, setCurrentUserRole, setCurrentUserName } = useFleetStore();
+  const { clients, setCurrentUserRole, setCurrentUserName, setBackofficeRole } = useFleetStore();
 
   const resellers = useMemo(
     () =>
@@ -126,6 +133,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       const userName = isReseller ? selectedReseller : 'Tunav';
       setCurrentUserRole(storeRole);
       setCurrentUserName(userName);
+      setBackofficeRole(selectedRole);
       setIsLoading(false);
       onLogin({ role: selectedRole, userName });
     }, 1000);

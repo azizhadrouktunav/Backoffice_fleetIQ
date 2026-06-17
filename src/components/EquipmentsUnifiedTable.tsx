@@ -13,6 +13,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import type { EquipmentType, FleetClient, FleetEquipment, Pack, SimCard, SimOffer } from '../state/FleetStore';
+import type { BackofficePermissions } from '../utils/backofficePermissions';
 
 export type EquipmentRowStatus = 'installed' | 'not_installed' | 'stock';
 
@@ -25,6 +26,7 @@ type Props = {
   simByEquipmentId: Map<number, SimCard>;
   packById: Map<number, Pack>;
   isTunavUser: boolean;
+  actionPermissions: BackofficePermissions['equipments'];
   filterEquipmentType: string;
   setFilterEquipmentType: (v: string) => void;
   filterClientReseller: string;
@@ -52,6 +54,7 @@ export function EquipmentsUnifiedTable({
   simByEquipmentId,
   packById,
   isTunavUser,
+  actionPermissions,
   filterEquipmentType,
   setFilterEquipmentType,
   filterClientReseller,
@@ -252,6 +255,7 @@ export function EquipmentsUnifiedTable({
                   <td className="p-4">{renderStatusBadge(eq)}</td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1 flex-wrap">
+                      {actionPermissions.canEdit && (
                       <button
                         type="button"
                         onClick={() => onEdit(eq)}
@@ -260,6 +264,8 @@ export function EquipmentsUnifiedTable({
                       >
                         <Edit2 size={16} />
                       </button>
+                      )}
+                      {actionPermissions.canViewDetails && (
                       <button
                         type="button"
                         onClick={() => onViewDetails(eq)}
@@ -268,7 +274,8 @@ export function EquipmentsUnifiedTable({
                       >
                         <Eye size={16} />
                       </button>
-                      {(inStock || status === 'not_installed') && (
+                      )}
+                      {actionPermissions.canAssign && (inStock || status === 'not_installed') && (
                         <button
                           type="button"
                           onClick={() => onAssign(eq)}
@@ -278,7 +285,7 @@ export function EquipmentsUnifiedTable({
                           <ArrowLeftRight size={16} />
                         </button>
                       )}
-                      {!inStock && status !== 'installed' && (
+                      {actionPermissions.canReturnToStock && !inStock && status !== 'installed' && (
                         <button
                           type="button"
                           onClick={() => onReturnToStock(eq)}

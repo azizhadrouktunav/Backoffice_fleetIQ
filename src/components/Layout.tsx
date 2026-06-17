@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { motion } from 'framer-motion';
-import { BackofficeRole } from '../pages/LoginPage';
+import type { BackofficeRole } from '../utils/backofficePermissions';
 
 interface LayoutProps {
   role: BackofficeRole;

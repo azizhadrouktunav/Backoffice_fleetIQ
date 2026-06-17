@@ -11,9 +11,11 @@ import {
   Store,
   ShieldCheck,
   Wallet,
-  Smartphone
+  Smartphone,
+  HardHat
 } from 'lucide-react';
-import { BackofficeRole } from '../pages/LoginPage';
+import type { BackofficeRole } from '../utils/backofficePermissions';
+import { getBackofficePermissions } from '../utils/backofficePermissions';
 import { useFleetStore } from '../state/FleetStore';
 
 interface SidebarProps {
@@ -31,19 +33,13 @@ const NAV_ITEMS: { key: NavItemKey; to: string; icon: typeof LayoutDashboard; la
   { key: 'equipments', to: '/equipments', icon: Server, label: 'Équipements' }
 ];
 
-const ALLOWED_BY_ROLE: Record<BackofficeRole, NavItemKey[]> = {
-  admin_tunav: ['dashboard', 'clients', 'subscriptions', 'sims', 'equipments'],
-  sav_tunav: ['dashboard', 'sims', 'equipments'],
-  finance_tunav: ['dashboard', 'clients', 'subscriptions'],
-  revendeur: ['dashboard', 'clients', 'sims', 'equipments']
-};
-
 const ROLE_META: Record<
   BackofficeRole,
   { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string }
 > = {
   admin_tunav: { label: 'Admin TUNAV', icon: ShieldCheck, color: 'from-cyan-500 to-blue-600' },
-  sav_tunav: { label: 'SAV TUNAV', icon: Wrench, color: 'from-emerald-500 to-teal-600' },
+  responsable_sav: { label: 'Responsable SAV', icon: Wrench, color: 'from-emerald-500 to-teal-600' },
+  technicien_sav: { label: 'Technicien SAV', icon: HardHat, color: 'from-lime-500 to-green-600' },
   revendeur: { label: 'Revendeur', icon: Store, color: 'from-amber-500 to-orange-600' },
   finance_tunav: { label: 'Service Financier', icon: Wallet, color: 'from-fuchsia-500 to-purple-600' }
 };
@@ -52,8 +48,8 @@ export function Sidebar({ role, onLogout }: SidebarProps) {
   const { currentUserName } = useFleetStore();
   const roleMeta = ROLE_META[role];
   const RoleIcon = roleMeta.icon;
-  const allowed = new Set(ALLOWED_BY_ROLE[role]);
-  const navItems = NAV_ITEMS.filter((item) => allowed.has(item.key));
+  const routePermissions = getBackofficePermissions(role).routes;
+  const navItems = NAV_ITEMS.filter((item) => routePermissions[item.key]);
 
   const isReseller = role === 'revendeur';
   const subtitle = isReseller ? currentUserName : roleMeta.label;

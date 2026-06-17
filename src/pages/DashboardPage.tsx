@@ -5,6 +5,7 @@ import { SearchableSelect } from '../components/SearchableSelect';
 import { Users, Server, WifiOff, Building2, AlertCircle, UserX, Settings } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useFleetStore } from '../state/FleetStore';
+import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
 
 type DisconnectedEquipment = {
   id: number;
@@ -267,9 +268,8 @@ function periodLabel(period: PeriodKey): string {
 
 export function DashboardPage() {
   const { disconnectThresholdHours, setDisconnectThresholdHours } = useFleetStore();
-  const isAdmin =
-    typeof sessionStorage !== 'undefined' &&
-    sessionStorage.getItem('backoffice_role') === 'admin_tunav';
+  const permissions = useBackofficePermissions();
+  const isAdmin = permissions?.dashboard.canViewAdminSections ?? false;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDisconnectedClientsModalOpen, setIsDisconnectedClientsModalOpen] = useState(false);
