@@ -29,11 +29,16 @@ import {
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
 import { EquipmentsUnifiedTable } from '../components/EquipmentsUnifiedTable';
+import { TableExportButtons } from '../components/TableExportButtons';
 import { SimIccidPicker, type SimCreateContext } from '../components/SimIccidPicker';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { EquipmentType, useFleetStore } from '../state/FleetStore';
 import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
 import { getVisibleEquipments, isStockClientName } from '../utils/fleetVisibility';
+import {
+  exportEquipmentsToExcel,
+  exportEquipmentsToPdf
+} from '../utils/equipmentTableExport';
 import {
   MapContainer as MapContainerBase,
   TileLayer as TileLayerBase,
@@ -102,6 +107,7 @@ export function EquipmentsPage() {
   const [filterClientReseller, setFilterClientReseller] = useState<string>('all');
   const [filterPack, setFilterPack] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<EquipmentStatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [equipmentToDelete, setEquipmentToDelete] = useState<any | null>(null);
 
@@ -222,6 +228,7 @@ export function EquipmentsPage() {
   }, [visibleEquipments]);
 
   const filteredEquipments = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return visibleEquipments.filter((eq) => {
       if (filterEquipmentType !== 'all') {
         const t = eq.equipmentType ?? eq.type;
@@ -238,9 +245,44 @@ export function EquipmentsPage() {
         } else if (String(eq.packId) !== filterPack) return false;
       }
       if (filterStatus !== 'all' && getEquipmentStatus(eq) !== filterStatus) return false;
+      if (q) {
+        const sim = simByEquipmentId.get(eq.id);
+        const iccid = sim?.iccid || eq.iccid || '';
+        const phone = sim?.phoneNumber || eq.sim || '';
+        const packName =
+          typeof eq.packId === 'number' ? packById.get(eq.packId)?.name ?? '' : '';
+        const offer =
+          sim?.offerId != null ? simOfferById.get(sim.offerId)?.name ?? '' : '';
+        const haystack = [
+          eq.serial,
+          eq.client,
+          eq.reseller,
+          eq.equipmentType ?? eq.type,
+          eq.type,
+          iccid,
+          phone,
+          packName,
+          offer,
+          eq.car,
+          eq.server
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [visibleEquipments, filterEquipmentType, filterClientReseller, filterPack, filterStatus]);
+  }, [
+    visibleEquipments,
+    filterEquipmentType,
+    filterClientReseller,
+    filterPack,
+    filterStatus,
+    searchQuery,
+    simByEquipmentId,
+    packById,
+    simOfferById
+  ]);
 
   const stats = useMemo(() => {
     const total = visibleEquipments.length;
@@ -559,6 +601,18 @@ export function EquipmentsPage() {
     setIsAddStockOpen(false);
   };
 
+  const equipmentExportOptions = {
+    equipments: filteredEquipments,
+    getEquipmentStatus,
+    simByEquipmentId,
+    simOfferById,
+    packById,
+    showPack: !isResellerUser
+  };
+
+  const exportFilteredExcel = () => exportEquipmentsToExcel(equipmentExportOptions);
+  const exportFilteredPdf = () => exportEquipmentsToPdf(equipmentExportOptions);
+
   return (
     <div className="space-y-6 pb-8">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -566,7 +620,13 @@ export function EquipmentsPage() {
           <h1 className="text-xl font-semibold text-slate-900">Gestion des Équipements</h1>
           <p className="text-sm text-slate-500 mt-1">Vue unifiée des équipements, affectations et stock.</p>
         </div>
-        {permissions?.equipments.canAdd && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <TableExportButtons
+            onExportExcel={exportFilteredExcel}
+            onExportPdf={exportFilteredPdf}
+            disabled={filteredEquipments.length === 0}
+          />
+          {permissions?.equipments.canAdd && (
           <button
             onClick={openAddStock}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
@@ -574,7 +634,8 @@ export function EquipmentsPage() {
             <Plus size={16} />
             Ajouter un équipement
           </button>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Stats cards */}
@@ -626,6 +687,8 @@ export function EquipmentsPage() {
         setFilterPack={setFilterPack}
         filterStatus={filterStatus}
         setFilterStatus={setFilterStatus}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
         clientResellerFilterOptions={clientResellerFilterOptions}
         getEquipmentStatus={getEquipmentStatus}
         isStockEquipment={isStockEquipment}

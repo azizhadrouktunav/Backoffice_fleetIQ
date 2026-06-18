@@ -1,7 +1,5 @@
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import type { FleetEquipment, SimCard, SimOffer } from '../state/FleetStore';
+import { exportTableToExcel, exportTableToPdf } from './tableExport';
 
 export type SimStatus = 'assigned_equipment' | 'assigned_client' | 'stock';
 
@@ -53,15 +51,6 @@ export function buildSimExportRows(
   return sims.map((sim) => simToExportRow(sim, offerById, equipmentById));
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export function exportSimsToExcel(
   sims: SimCard[],
   offerById: Map<number, SimOffer>,
@@ -69,16 +58,7 @@ export function exportSimsToExcel(
   equipmentById?: Map<number, FleetEquipment>
 ) {
   const rows = buildSimExportRows(sims, offerById, equipmentById);
-  const sheet = XLSX.utils.aoa_to_sheet([[...SIM_EXPORT_HEADERS], ...rows]);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Puces');
-  const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-  downloadBlob(
-    new Blob([buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }),
-    filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
-  );
+  exportTableToExcel(SIM_EXPORT_HEADERS, rows, 'Puces', filename);
 }
 
 export function exportSimsToPdf(
@@ -88,21 +68,8 @@ export function exportSimsToPdf(
   filename: string,
   equipmentById?: Map<number, FleetEquipment>
 ) {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-  doc.setFontSize(14);
-  doc.text(title, 40, 36);
-  doc.setFontSize(10);
-  doc.text(`Exporté le ${new Date().toLocaleString('fr-FR')}`, 40, 52);
-
-  autoTable(doc, {
-    startY: 64,
-    head: [SIM_EXPORT_HEADERS as unknown as string[]],
-    body: buildSimExportRows(sims, offerById, equipmentById),
-    styles: { fontSize: 8, cellPadding: 4 },
-    headStyles: { fillColor: [37, 99, 235] }
-  });
-
-  doc.save(filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
+  const rows = buildSimExportRows(sims, offerById, equipmentById);
+  exportTableToPdf(title, SIM_EXPORT_HEADERS, rows, filename);
 }
 
 export function filterSimsByKpi(sims: SimCard[], kpi: SimKpiKey): SimCard[] {

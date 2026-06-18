@@ -16,12 +16,11 @@ import {
   Link2,
   Unlink,
   ArrowLeftRight,
-  X,
-  FileSpreadsheet,
-  FileText
+  X
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
+import { TableExportButtons } from '../components/TableExportButtons';
 import { SearchableSelect } from '../components/SearchableSelect';
 import {
   SimTableContextMenu,
@@ -506,22 +505,11 @@ export function SimsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={exportFilteredExcel}
-            className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
-          >
-            <FileSpreadsheet size={16} />
-            Exporter Excel
-          </button>
-          <button
-            type="button"
-            onClick={exportFilteredPdf}
-            className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
-          >
-            <FileText size={16} />
-            Exporter PDF
-          </button>
+          <TableExportButtons
+            onExportExcel={exportFilteredExcel}
+            onExportPdf={exportFilteredPdf}
+            disabled={filteredSims.length === 0}
+          />
           {canManageSims && (
           <>
           <button

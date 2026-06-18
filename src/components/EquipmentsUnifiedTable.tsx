@@ -10,7 +10,8 @@ import {
   Hash,
   Trash2,
   Package,
-  Smartphone
+  Smartphone,
+  Search
 } from 'lucide-react';
 import type { EquipmentType, FleetClient, FleetEquipment, Pack, SimCard, SimOffer } from '../state/FleetStore';
 import type { BackofficePermissions } from '../utils/backofficePermissions';
@@ -35,6 +36,8 @@ type Props = {
   setFilterPack: (v: string) => void;
   filterStatus: string;
   setFilterStatus: (v: string) => void;
+  searchQuery: string;
+  setSearchQuery: (v: string) => void;
   clientResellerFilterOptions: string[];
   getEquipmentStatus: (eq: FleetEquipment) => EquipmentRowStatus;
   isStockEquipment: (client: string) => boolean;
@@ -64,6 +67,8 @@ export function EquipmentsUnifiedTable({
   setFilterPack,
   filterStatus,
   setFilterStatus,
+  searchQuery,
+  setSearchQuery,
   clientResellerFilterOptions,
   getEquipmentStatus,
   isStockEquipment,
@@ -129,6 +134,16 @@ export function EquipmentsUnifiedTable({
   return (
     <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
       <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            placeholder="Rechercher par IMEI, client, revendeur, SIM, ICCID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-shadow"
+          />
+        </div>
         <select
           value={filterEquipmentType}
           onChange={(e) => setFilterEquipmentType(e.target.value)}

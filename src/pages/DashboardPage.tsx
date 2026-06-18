@@ -4,8 +4,15 @@ import { PeriodFilter, PeriodKey } from '../components/PeriodFilter';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { Users, Server, WifiOff, Building2, AlertCircle, UserX, Settings } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { TableExportButtons } from '../components/TableExportButtons';
 import { useFleetStore } from '../state/FleetStore';
 import { useBackofficePermissions, useBackofficeRole } from '../hooks/useBackofficePermissions';
+import {
+  exportDisconnectedClientsToExcel,
+  exportDisconnectedClientsToPdf,
+  exportDisconnectedEquipmentsToExcel,
+  exportDisconnectedEquipmentsToPdf
+} from '../utils/dashboardTableExport';
 
 type DisconnectedEquipment = {
   id: number;
@@ -735,6 +742,14 @@ export function DashboardPage() {
             </div>
           </div>
 
+          {filteredDisconnected.length > 0 && (
+            <TableExportButtons
+              size="compact"
+              onExportExcel={() => exportDisconnectedEquipmentsToExcel(filteredDisconnected)}
+              onExportPdf={() => exportDisconnectedEquipmentsToPdf(filteredDisconnected)}
+            />
+          )}
+
           {filteredDisconnected.length > 0 ? (
             <div className="border border-slate-200 rounded-lg overflow-hidden overflow-x-auto">
               <table className="w-full text-left min-w-[520px]">
@@ -826,6 +841,18 @@ export function DashboardPage() {
               />
             </div>
           </div>
+
+          {filteredDisconnectedClientsRows.length > 0 && (
+            <TableExportButtons
+              size="compact"
+              onExportExcel={() =>
+                exportDisconnectedClientsToExcel(filteredDisconnectedClientsRows)
+              }
+              onExportPdf={() =>
+                exportDisconnectedClientsToPdf(filteredDisconnectedClientsRows)
+              }
+            />
+          )}
 
           {filteredDisconnectedClientsRows.length > 0 ? (
             <div className="border border-slate-200 rounded-lg overflow-hidden overflow-x-auto">

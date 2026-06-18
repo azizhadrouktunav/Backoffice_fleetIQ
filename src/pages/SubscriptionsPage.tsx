@@ -17,8 +17,15 @@ import {
   Settings
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { TableExportButtons } from '../components/TableExportButtons';
 import { useFleetStore } from '../state/FleetStore';
 import { useBackofficePermissions } from '../hooks/useBackofficePermissions';
+import {
+  exportPackClientsToExcel,
+  exportPackClientsToPdf,
+  exportPacksListToExcel,
+  exportPacksListToPdf
+} from '../utils/packTableExport';
 
 type FeatureNode = {
   id: string;
@@ -847,6 +854,12 @@ export function SubscriptionsPage() {
   const selectedFeatureCount = selectedFeatures.size;
   const totalLeafFeatureCount = allLeafFeatureIds.length;
 
+  const exportPacksExcel = () => exportPacksListToExcel(filteredPacks);
+  const exportPacksPdf = () => exportPacksListToPdf(filteredPacks);
+  const exportPackClientsExcel = () =>
+    exportPackClientsToExcel(filteredClients, packById);
+  const exportPackClientsPdf = () => exportPackClientsToPdf(filteredClients, packById);
+
   return (
     <div className="space-y-6 pb-8">
       <div className="flex items-center justify-between">
@@ -861,8 +874,8 @@ export function SubscriptionsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Packs */}
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3">
-            <div className="relative w-full">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
                 type="text"
@@ -872,6 +885,12 @@ export function SubscriptionsPage() {
                 className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-shadow"
               />
             </div>
+            <TableExportButtons
+              size="compact"
+              onExportExcel={exportPacksExcel}
+              onExportPdf={exportPacksPdf}
+              disabled={filteredPacks.length === 0}
+            />
           </div>
 
           <div className="divide-y divide-slate-50">
@@ -916,8 +935,8 @@ export function SubscriptionsPage() {
 
         {/* Clients */}
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3">
-            <div className="relative w-full">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
                 type="text"
@@ -927,6 +946,12 @@ export function SubscriptionsPage() {
                 className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-shadow"
               />
             </div>
+            <TableExportButtons
+              size="compact"
+              onExportExcel={exportPackClientsExcel}
+              onExportPdf={exportPackClientsPdf}
+              disabled={filteredClients.length === 0}
+            />
           </div>
 
           <div className="overflow-x-auto">

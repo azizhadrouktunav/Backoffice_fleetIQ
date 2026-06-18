@@ -41,6 +41,7 @@ import {
 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StatCard } from '../components/StatCard';
+import { TableExportButtons } from '../components/TableExportButtons';
 import { PeriodKey } from '../components/PeriodFilter';
 import { ClientsFilterBar } from '../components/ClientsFilterBar';
 import { SimIccidPicker, type SimCreateContext } from '../components/SimIccidPicker';
@@ -51,6 +52,7 @@ import {
   getVisibleEquipments,
   isStockClientName
 } from '../utils/fleetVisibility';
+import { exportClientsToExcel, exportClientsToPdf } from '../utils/clientTableExport';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -1175,13 +1177,24 @@ export function ClientsPage() {
   useEffect(() => {
     if (isResellerUser && clientType === 'Revendeur') setClientType('Simple');
   }, [isResellerUser, clientType]);
+
+  const exportFilteredExcel = () =>
+    exportClientsToExcel(filteredClients, equipmentStats);
+  const exportFilteredPdf = () => exportClientsToPdf(filteredClients, equipmentStats);
+
   return (
     <div className="space-y-6 pb-8">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-semibold text-slate-900">
           Gestion Clients
         </h1>
-        {permissions?.clients.canAddEdit && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <TableExportButtons
+            onExportExcel={exportFilteredExcel}
+            onExportPdf={exportFilteredPdf}
+            disabled={filteredClients.length === 0}
+          />
+          {permissions?.clients.canAddEdit && (
         <button
           onClick={() => openAddEditModal()}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm">
@@ -1190,6 +1203,7 @@ export function ClientsPage() {
           Ajouter un client
         </button>
         )}
+        </div>
       </div>
 
       {/* Stats */}
