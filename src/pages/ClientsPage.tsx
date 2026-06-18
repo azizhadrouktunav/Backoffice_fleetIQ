@@ -2039,7 +2039,7 @@ export function ClientsPage() {
                         </td>
                         <td className="p-3 text-right">
                           <div className="inline-flex items-center justify-end gap-1">
-                            {permissions?.clients.canViewEquipments && (
+                            {permissions?.clients.canViewEquipments && eq.isInstalled && (
                               <button
                                 type="button"
                                 onClick={() => openClientAssignedEquipmentDetails(eq)}
@@ -2049,7 +2049,7 @@ export function ClientsPage() {
                                 <Eye size={16} />
                               </button>
                             )}
-                            {permissions?.clients.canEditEquipmentSim && (
+                            {permissions?.clients.canEditEquipmentSim && eq.isInstalled && (
                               <button
                                 type="button"
                                 onClick={() => openClientEquipmentEditSim(eq)}

@@ -149,7 +149,7 @@ const PERMISSIONS_BY_ROLE: Record<BackofficeRole, BackofficePermissions> = {
       canInstallEquipment: true,
       canUninstallEquipment: true,
       canEditEquipmentSim: true,
-      canManagePayment: false
+      canManagePayment: true
     },
     equipments: {
       canAdd: false,
