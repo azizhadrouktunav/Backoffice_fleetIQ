@@ -38,6 +38,7 @@ type Props = {
   clientResellerFilterOptions: string[];
   getEquipmentStatus: (eq: FleetEquipment) => EquipmentRowStatus;
   isStockEquipment: (client: string) => boolean;
+  showPack?: boolean;
   onEdit: (eq: FleetEquipment) => void;
   onDelete: (eq: FleetEquipment) => void;
   onViewDetails: (eq: FleetEquipment) => void;
@@ -66,6 +67,7 @@ export function EquipmentsUnifiedTable({
   clientResellerFilterOptions,
   getEquipmentStatus,
   isStockEquipment,
+  showPack = true,
   onEdit,
   onDelete,
   onViewDetails,
@@ -151,6 +153,7 @@ export function EquipmentsUnifiedTable({
             </option>
           ))}
         </select>
+        {showPack && (
         <select
           value={filterPack}
           onChange={(e) => setFilterPack(e.target.value)}
@@ -164,6 +167,7 @@ export function EquipmentsUnifiedTable({
             </option>
           ))}
         </select>
+        )}
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
@@ -185,7 +189,7 @@ export function EquipmentsUnifiedTable({
               <th className="p-4 font-medium">Type</th>
               <th className="p-4 font-medium">IMEI</th>
               <th className="p-4 font-medium">Carte SIM / Offre</th>
-              <th className="p-4 font-medium">Pack</th>
+              {showPack && <th className="p-4 font-medium">Pack</th>}
               <th className="p-4 font-medium">Statut</th>
               <th className="p-4 font-medium text-right">Actions</th>
             </tr>
@@ -243,6 +247,7 @@ export function EquipmentsUnifiedTable({
                       )}
                     </div>
                   </td>
+                  {showPack && (
                   <td className="p-4">
                     {pack ? (
                       <span className="inline-flex px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
@@ -252,6 +257,7 @@ export function EquipmentsUnifiedTable({
                       <span className="text-xs text-slate-400 italic">—</span>
                     )}
                   </td>
+                  )}
                   <td className="p-4">{renderStatusBadge(eq)}</td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1 flex-wrap">
@@ -302,7 +308,7 @@ export function EquipmentsUnifiedTable({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-8 text-center text-slate-500">
+                <td colSpan={showPack ? 8 : 7} className="p-8 text-center text-slate-500">
                   Aucun équipement trouvé.
                 </td>
               </tr>

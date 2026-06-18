@@ -90,6 +90,7 @@ export function EquipmentsPage() {
   const packById = useMemo(() => new Map(packs.map((p) => [p.id, p])), [packs]);
   const simOfferById = useMemo(() => new Map(simOffers.map((o) => [o.id, o])), [simOffers]);
   const isTunavUser = currentUserRole === 'Tunav';
+  const isResellerUser = currentUserRole === 'Revendeur';
 
   const buildSimCreateContext = (clientName: string, reseller: string): SimCreateContext => ({
     clientName,
@@ -607,6 +608,7 @@ export function EquipmentsPage() {
         simByEquipmentId={simByEquipmentId}
         packById={packById}
         isTunavUser={isTunavUser}
+        showPack={!isResellerUser}
         actionPermissions={
           permissions?.equipments ?? {
             canAdd: false,
@@ -738,6 +740,7 @@ export function EquipmentsPage() {
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                 />
               </div>
+              {!isResellerUser && (
               <div className="md:col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Pack</label>
                 <select
@@ -758,6 +761,7 @@ export function EquipmentsPage() {
                   ))}
                 </select>
               </div>
+              )}
             </div>
           </div>
 
